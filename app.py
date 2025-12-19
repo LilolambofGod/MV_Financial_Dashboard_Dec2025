@@ -17,14 +17,13 @@ st.set_page_config(
 # Custom CSS for UI Improvements
 st.markdown("""
     <style>
-    /* 1. GENERAL PADDING - Reduced top padding to move content up */
+    /* 1. GENERAL PADDING */
     .block-container {
-        padding-top: 1rem; /* Reduced from 2rem to move title up */
+        padding-top: 1rem;
         padding-bottom: 2rem;
     }
     
     /* 2. SIDEBAR LAYOUT STYLING */
-    /* Remove default sidebar padding to move Navigation to the very top */
     section[data-testid="stSidebar"] .block-container {
         padding-top: 1rem; 
         display: flex;
@@ -32,7 +31,6 @@ st.markdown("""
         height: 100vh;
     }
     
-    /* Force sidebar content to flex column and push footer to bottom */
     [data-testid="stSidebarUserContent"] {
         display: flex;
         flex-direction: column;
@@ -40,7 +38,6 @@ st.markdown("""
         justify-content: flex-start;
     }
     
-    /* Target the caption/footer to sit at the bottom */
     [data-testid="stSidebarUserContent"] div:has(p) {
         margin-top: auto;
         padding-bottom: 20px;
@@ -79,11 +76,11 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA ENGINE
+# 2. DATA ENGINE (SIMULATION MODE)
 # ==========================================
 @st.cache_data
 def load_data_final():
-    dates = pd.date_range(start="2021-01-01", end="2025-12-31", freq="D")
+    dates = pd.date_range(start="2024-01-01", end="2025-12-31", freq="D")
     
     subsidiaries = [
         "All About Caring - Rush City", 
@@ -92,8 +89,9 @@ def load_data_final():
     ]
     
     service_types = [
-        "PCA", "Homemaking", "ICLS", "HIS", 
-        "Night Supervision", "Respite", "Complex RN", "Complex LPN"
+        "PCA", 
+        "Complex Nursing", 
+        "Other Services"
     ]
     
     data = []
@@ -127,6 +125,8 @@ def load_data_final():
             lost_clients = float(np.random.poisson(0.03)) 
             new_hires = float(np.random.poisson(0.03)) 
             departures = float(np.random.poisson(0.015))
+
+            rec_spend = (new_hires * 1500.0) + np.random.uniform(50, 200)
             
             leads_contacted = new_clients * np.random.randint(3, 6) if new_clients > 0 else 0
             sales_cycle_days = np.random.randint(14, 45) if new_clients > 0 else 0
@@ -146,6 +146,7 @@ def load_data_final():
                 "COGS": cogs,
                 "Expenses": opex,
                 "Marketing Spend": marketing_spend,
+                "Recruitment Spend": rec_spend, 
                 "Gross Margin": rev - cogs,
                 "EBITDA": (rev - cogs) - opex,
                 "D&A": rev * 0.05,
@@ -197,22 +198,20 @@ def get_historical_avg(df, sub, metric, freq='Monthly', year=None, service_types
         return numeric_df.groupby(['Year', 'Quarter'])[metric].sum().mean()
     elif freq == 'Annual':
         return numeric_df.groupby(['Year'])[metric].sum().mean()
+    elif freq == 'Weekly':
+        return numeric_df.groupby(['Year', 'Week'])[metric].sum().mean()
     return 0.0
 
 # ==========================================
 # 4. VIEW: HOME
 # ==========================================
 def show_home():
-    # Add CSS specifically to nudge the logo down slightly
     st.markdown("""
         <style>
-        [data-testid="stImage"] {
-            margin-top: 20px;
-        }
+        [data-testid="stImage"] { margin-top: 20px; }
         </style>
     """, unsafe_allow_html=True)
 
-    # 1. Logo at Top Left
     c_logo, c_rest = st.columns([1, 9]) 
     with c_logo:
         try:
@@ -227,7 +226,6 @@ def show_home():
                 Magna Vita Financial Dashboard <span style='color: #4e8cff; font-size: 0.8em;'>(BETA)</span>
             </h1>
         """, unsafe_allow_html=True)
-        # Added Creator field here
         st.markdown(f"""
             <p style='text-align: center; color: gray;'>
                 <b>Date Built:</b> {datetime.date.today().strftime('%B %d, %Y')}<br>
@@ -238,7 +236,7 @@ def show_home():
         st.success("👋 Welcome! Use the sidebar to navigate between Historical Performance and Financial Projections.")
         with st.expander("📝 Read Me: Assumptions & Notes", expanded=True):
             st.markdown("""
-            * **Data Source:** Modeled data based on 2021-2025 financial trends.
+            * **Data Source:** Modeled data based on 2024-2025 financial trends.
             * **Granularity:** Daily data aggregated to Weekly, Monthly, or Quarterly views.
             * **Integration:** Designed to eventually integrate with *AlayaCare* API.
             * **Missing Data:** Imputed using historical averages where actuals are missing.
@@ -255,7 +253,7 @@ def show_history():
         with c1:
             sub_select = st.multiselect("Select Subsidiary", options=df_master["Subsidiary"].unique(), default=df_master["Subsidiary"].unique())
         with c2:
-            year_select = st.multiselect("Select Year", options=sorted(df_master["Year"].unique()), default=[2024, 2025])
+            year_select = st.multiselect("Select Year", options=[2024, 2025], default=[2024, 2025])
         with c3:
             service_select = st.multiselect("Service Type", options=sorted(df_master["Service Type"].unique()), default=df_master["Service Type"].unique())
         with c4:
@@ -274,20 +272,17 @@ def show_history():
         "EBITDA": "sum", "Contact Hours": "sum", "Scheduled Hours": "sum", 
         "Qualified Hours": "sum", "Billable Hours": "sum",
         "New Hires": "sum", "Departures": "sum", "D&A": "sum",
-        "Marketing Spend": "sum", "New Clients": "sum", "Lost Clients": "sum",
+        "Marketing Spend": "sum", "Recruitment Spend": "sum", 
+        "New Clients": "sum", "Lost Clients": "sum",
         "Leads Contacted": "sum", "Avg Sales Cycle": "mean",
         "Avg Contract Duration": "mean", 
         "Employee Count": "mean", "Client Count": "mean"
     }
     
-    if view_by == "Week":
-        group_cols = ["Year", "Week"]
-    elif view_by == "Month":
-        group_cols = ["Year", "Month"]
-    elif view_by == "Quarter":
-        group_cols = ["Year", "Quarter"]
-    else:
-        group_cols = ["Year"]
+    if view_by == "Week": group_cols = ["Year", "Week"]
+    elif view_by == "Month": group_cols = ["Year", "Month"]
+    elif view_by == "Quarter": group_cols = ["Year", "Quarter"]
+    else: group_cols = ["Year"]
         
     df_view = df_filt.groupby(group_cols).agg(agg_rules).reset_index()
     df_view["Net Income"] = (df_view["EBITDA"] - df_view["D&A"]) * 0.75
@@ -301,33 +296,45 @@ def show_history():
     else:
         df_view["Period"] = df_view["Year"].astype(str)
 
+    # --- FINANCIAL RATIOS ---
     df_view["Gross Margin %"] = (df_view["Gross Margin"] / df_view["Revenue"] * 100).fillna(0)
     df_view["EBITDA %"] = (df_view["EBITDA"] / df_view["Revenue"] * 100).fillna(0)
     df_view["Net Margin %"] = (df_view["Net Income"] / df_view["Revenue"] * 100).fillna(0)
     df_view["COGS %"] = (df_view["COGS"] / df_view["Revenue"] * 100).fillna(0)
     df_view["OpEx %"] = (df_view["Expenses"] / df_view["Revenue"] * 100).fillna(0)
     
+    # --- UNIT ECONOMICS ---
     df_view["Rev per Client"] = (df_view["Revenue"] / df_view["Client Count"]).fillna(0)
     df_view["Rev per Caregiver"] = (df_view["Revenue"] / df_view["Employee Count"]).fillna(0)
     
+    # --- OPERATIONAL RATIOS ---
     df_view["Service Efficiency %"] = (df_view["Scheduled Hours"] / df_view["Qualified Hours"] * 100).fillna(0)
     df_view["Scheduling Efficiency %"] = (df_view["Contact Hours"] / df_view["Scheduled Hours"] * 100).fillna(0)
     df_view["Billing Efficiency %"] = (df_view["Billable Hours"] / df_view["Contact Hours"] * 100).fillna(0)
     
+    # --- HR RATIOS ---
     df_view["New Employee %"] = (df_view["New Hires"] / df_view["Employee Count"] * 100).fillna(0)
     df_view["Turnover Rate %"] = (df_view["Departures"] / df_view["Employee Count"] * 100).fillna(0)
+    df_view["Recruitment / Rev %"] = (df_view["Recruitment Spend"] / df_view["Revenue"] * 100).fillna(0)
+    df_view["Recruitment / Rev per CG %"] = (df_view["Recruitment Spend"] / df_view["Rev per Caregiver"] * 100).fillna(0)
     
+    # --- CLIENT RATIOS ---
     df_view["Contact Hrs per Client"] = (df_view["Contact Hours"] / df_view["Client Count"]).fillna(0)
     df_view["Contact/Sched per Client %"] = df_view["Scheduling Efficiency %"]
     df_view["Contact/Qual per Client %"] = (df_view["Contact Hours"] / df_view["Qualified Hours"] * 100).fillna(0)
+    df_view["Caregiver to Client Ratio"] = (df_view["Employee Count"] / df_view["Client Count"]).fillna(0)
+    df_view["Per Client Qual Hrs"] = (df_view["Qualified Hours"] / df_view["Client Count"]).fillna(0)
+    df_view["Per Client Sched Hrs"] = (df_view["Scheduled Hours"] / df_view["Client Count"]).fillna(0)
+    df_view["Per Client Contact Hrs"] = (df_view["Contact Hours"] / df_view["Client Count"]).fillna(0)
     
+    # --- MARKETING RATIOS ---
     df_view["CAC"] = (df_view["Marketing Spend"] / df_view["New Clients"]).replace([np.inf, -np.inf], 0).fillna(0)
     df_view["CAC / Rev per Client %"] = (df_view["CAC"] / df_view["Rev per Client"] * 100).fillna(0)
-    
     df_view["COGS per Client"] = (df_view["COGS"] / df_view["Client Count"]).fillna(0)
     df_view["CAC / COGS per Client %"] = (df_view["CAC"] / df_view["COGS per Client"] * 100).fillna(0)
     df_view["Sales Conv %"] = (df_view["New Clients"] / df_view["Leads Contacted"] * 100).fillna(0)
 
+    # --- KPI DISPLAY ---
     st.markdown("### 📊 Key Performance Indicators")
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Total Revenue", f"${df_view['Revenue'].sum():,.0f}")
@@ -343,7 +350,7 @@ def show_history():
     
     st.divider()
 
-    tabs = st.tabs(["💰 Revenue", "📈 Profitability", "📉 Cost Analysis", "⚙️ Operations", "👥 Human Resource", "🤝 Clients", "📢 Marketing & Sales Efficiency", "📥 Raw Data"])
+    tabs = st.tabs(["💰 Revenue", "📈 Profitability", "📉 Cost Analysis", "⚙️ Operations", "👥 Human Resource", "🤝 Clients", "📢 Marketing & Sales Metrics", "📥 Raw Data"])
     
     with tabs[0]: # Revenue
         c1, c2 = st.columns(2)
@@ -354,7 +361,6 @@ def show_history():
                 grp_svc = group_cols + ["Service Type"]
                 df_svc_view = df_filt.groupby(grp_svc)["Revenue"].sum().reset_index()
                 
-                # Apply same period logic to this specific dataframe
                 if view_by == "Week":
                     df_svc_view["Period"] = df_svc_view.apply(lambda x: f"{int(x['Year'])}-W{int(x['Week']):02d}", axis=1)
                 elif view_by == "Month":
@@ -377,12 +383,12 @@ def show_history():
         c1, c2 = st.columns(2)
         with c1: st.plotly_chart(plot_line_chart(df_view, "Period", "EBITDA", "EBITDA Trend"), use_container_width=True)
         with c2: st.plotly_chart(plot_line_chart(df_view, "Period", "Net Income", "Net Income Trend"), use_container_width=True)
-        st.subheader("Margin Analysis Over Time")
+        
         fig_margins = go.Figure()
         fig_margins.add_trace(go.Scatter(x=df_view['Period'], y=df_view['Gross Margin %'], name='Gross Margin %'))
         fig_margins.add_trace(go.Scatter(x=df_view['Period'], y=df_view['EBITDA %'], name='EBITDA %'))
         fig_margins.add_trace(go.Scatter(x=df_view['Period'], y=df_view['Net Margin %'], name='Net Margin %', line=dict(dash='dot')))
-        fig_margins.update_layout(template="plotly_white", hovermode="x unified")
+        fig_margins.update_layout(template="plotly_white", hovermode="x unified", title="Margin Analysis Over Time")
         st.plotly_chart(fig_margins, use_container_width=True)
 
     with tabs[2]: # Cost Analysis
@@ -411,6 +417,14 @@ def show_history():
             fig_io.add_trace(go.Bar(x=df_view['Period'], y=-df_view['Departures'], name='Departures', marker_color='#e74c3c'))
             fig_io.update_layout(barmode='relative', template="plotly_white", hovermode="x unified", yaxis_title="Count")
             st.plotly_chart(fig_io, use_container_width=True)
+        
+        st.divider()
+        st.subheader("Recruitment Efficiency")
+        c3, c4 = st.columns(2)
+        with c3:
+            st.plotly_chart(plot_line_chart(df_view, "Period", "Recruitment / Rev %", "Recruitment Spend % of Revenue"), use_container_width=True)
+        with c4:
+            st.plotly_chart(plot_line_chart(df_view, "Period", "Recruitment / Rev per CG %", "Recruitment Spend / Rev per Caregiver %"), use_container_width=True)
 
     with tabs[5]: # Clients
         c1, c2 = st.columns(2)
@@ -419,19 +433,38 @@ def show_history():
         
         c3, c4 = st.columns(2)
         with c3:
-            st.subheader("Client Flows (Inflow/Outflow)")
+            # UPDATED: Removed subheader, put title inside chart for formatting alignment
             fig_client_io = go.Figure()
             fig_client_io.add_trace(go.Bar(x=df_view['Period'], y=df_view['New Clients'], name='New Clients', marker_color='#2ecc71'))
             fig_client_io.add_trace(go.Bar(x=df_view['Period'], y=-df_view['Lost Clients'], name='Lost Clients', marker_color='#e74c3c'))
-            fig_client_io.update_layout(barmode='relative', template="plotly_white", hovermode="x unified", yaxis_title="Count")
+            fig_client_io.update_layout(barmode='relative', template="plotly_white", hovermode="x unified", yaxis_title="Count", title="Client Flows (Inflow/Outflow)")
             st.plotly_chart(fig_client_io, use_container_width=True)
-        with c4: st.plotly_chart(plot_line_chart(df_view, "Period", "Contact Hrs per Client", "Avg Contact Hrs/Client"), use_container_width=True)
+        with c4: 
+            st.plotly_chart(plot_line_chart(df_view, "Period", "Contact Hrs per Client", "Avg Per Client Contact Hrs"), use_container_width=True)
         
         c5, c6 = st.columns(2)
-        with c5: st.plotly_chart(plot_line_chart(df_view, "Period", "Contact/Sched per Client %", "Avg Contact/Sched Hours %"), use_container_width=True)
-        with c6: st.plotly_chart(plot_line_chart(df_view, "Period", "Contact/Qual per Client %", "Avg Contact/Qualified Hours %"), use_container_width=True)
+        with c5: 
+            st.plotly_chart(plot_line_chart(df_view, "Period", "Contact/Sched per Client %", "Avg Per Client Contact/Sched Hours %"), use_container_width=True)
+        with c6: 
+            st.plotly_chart(plot_line_chart(df_view, "Period", "Contact/Qual per Client %", "Avg Per Client Contact/Qualified Hours %"), use_container_width=True)
 
-    with tabs[6]: # Marketing & Sales
+        st.divider()
+        c7, c8 = st.columns(2)
+        with c7:
+            st.plotly_chart(plot_line_chart(df_view, "Period", "Caregiver to Client Ratio", "Caregiver to Client Ratio"), use_container_width=True)
+            st.info("ℹ️ **Definition:** Total Employees divided by Total Clients.")
+        with c8:
+            # UPDATED: Removed subheader, updated chart title for clarity
+            df_hours_melt = df_view.melt(id_vars=["Period"], 
+                                         value_vars=["Per Client Qual Hrs", "Per Client Sched Hrs", "Per Client Contact Hrs"],
+                                         var_name="Metric", value_name="Hours")
+            
+            fig_hours = px.bar(df_hours_melt, x="Period", y="Hours", color="Metric", barmode="group",
+                               title="Avg Hours Per Client: Qualified vs. Scheduled vs. Contact")
+            fig_hours.update_layout(template="plotly_white", hovermode="x unified", legend=dict(orientation="h", y=-0.2))
+            st.plotly_chart(fig_hours, use_container_width=True)
+
+    with tabs[6]: # Marketing & Sales Metrics
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("Total Marketing Spend")
@@ -472,13 +505,14 @@ def show_projections():
         target_sub = st.selectbox("", ["Magna Vita (Consolidated)"] + list(df_master["Subsidiary"].unique()))
     with c2:
         st.markdown("<div class='step-header'>Baseline Period:</div>", unsafe_allow_html=True)
-        hist_basis = st.selectbox("", ["Monthly", "Quarterly", "Annual"])
+        # UPDATED: Moved "Weekly" to the front of the list
+        hist_basis = st.selectbox("", ["Weekly", "Monthly", "Quarterly", "Annual"])
     with c3:
         st.markdown("<div class='step-header'>Baseline Year:</div>", unsafe_allow_html=True)
         avail_years = [2025, 2024]
         basis_year = st.selectbox("", avail_years, index=0)
     with c4:
-        st.markdown("<div class='step-header'>Duration:</div>", unsafe_allow_html=True)
+        st.markdown("<div class='step-header'>Projections Duration:</div>", unsafe_allow_html=True)
         proj_years = st.radio("", ["1 Quarter", "1 Year", "3 Years", "5 Years"], horizontal=True)
     with c5:
         st.markdown("<div class='step-header'>Service Type:</div>", unsafe_allow_html=True)
@@ -506,6 +540,7 @@ def show_projections():
     with r4:
         inputs['bill_contact_pct'] = st.number_input(f"Billable/Contact Hrs % Per Patient", value=98.0) / 100
         default_hrs = 160 if hist_basis == "Monthly" else (480 if hist_basis == "Quarterly" else 1920)
+        if hist_basis == "Weekly": default_hrs = 40
         inputs['base_qual_hours'] = st.number_input(f"Base Qualified Hrs Per Patient", value=default_hrs)
 
     st.markdown("---")
@@ -540,7 +575,7 @@ def show_projections():
     st.markdown("---")
     st.markdown("#### 4. Other Assumptions")
     o1, o2, o3 = st.columns(3)
-    with o1: inputs['tax_rate_corp'] = st.number_input("Effective Tax Rate %", value=25.0) / 100
+    with o1: inputs['tax_rate_corp'] = st.number_input("Avg Tax Rate %", value=25.0) / 100
     with o2: inputs['da_exp'] = st.number_input(f"Depreciation & Amortization ({hist_basis})", value=1000.0)
     with o3: inputs['other_exp'] = st.number_input(f"Other Expenses ({hist_basis})", value=500.0)
 
@@ -571,11 +606,20 @@ def show_projections():
 
     if hist_basis == "Monthly": steps_per_year = 12
     elif hist_basis == "Quarterly": steps_per_year = 4
+    elif hist_basis == "Weekly": steps_per_year = 52
     else: steps_per_year = 1
         
     duration_map = {"1 Quarter": 0.25, "1 Year": 1, "3 Years": 3, "5 Years": 5}
     total_steps = int(duration_map[proj_years] * steps_per_year)
     if total_steps < 1: total_steps = 1
+
+    # Valuation Multiples
+    multiples_map = {
+        "All About Caring - Rush City": {"Conservative": 4.5, "Base": 6.0, "Robust": 7.5},
+        "All About Caring - Twin Cities": {"Conservative": 4.5, "Base": 6.0, "Robust": 7.5},
+        "Communities of Care": {"Conservative": 6.0, "Base": 8.0, "Robust": 10.0},
+        "Magna Vita (Consolidated)": {"Conservative": 5.0, "Base": 6.6, "Robust": 8.3}
+    }
 
     def calculate_projection(sc):
         pat_g = drivers[f"{sc}_pat_growth"]
@@ -596,6 +640,8 @@ def show_projections():
 
         data_rows = []
         start_date = datetime.date.today()
+        
+        mult = multiples_map.get(target_sub, multiples_map["Magna Vita (Consolidated)"])[sc]
 
         for i in range(1, total_steps + 1):
             curr_patients *= (1 + p_pat_g)
@@ -605,7 +651,7 @@ def show_projections():
             curr_opex_base *= (1 + p_exp_g)
 
             hrs_qual = inputs['base_qual_hours']
-            hrs_sched = hrs_qual * inputs['sched_qual_pct']
+            hrs_sched = inputs['base_qual_hours'] * inputs['sched_qual_pct']
             hrs_contact = hrs_sched * inputs['contact_sched_pct']
             hrs_bill = hrs_contact * inputs['bill_contact_pct']
             
@@ -621,6 +667,8 @@ def show_projections():
             gross_margin = revenue - cogs
             ebitda = gross_margin - curr_opex_base
             net_income = (ebitda - inputs['da_exp']) * (1 - inputs['tax_rate_corp'])
+            
+            valuation = ebitda * mult
 
             if hist_basis == "Monthly":
                 date_val = pd.to_datetime(start_date) + pd.DateOffset(months=i)
@@ -628,6 +676,9 @@ def show_projections():
             elif hist_basis == "Quarterly":
                 date_val = pd.to_datetime(start_date) + pd.DateOffset(months=i*3)
                 lbl = f"{date_val.year}-Q{(date_val.month-1)//3+1}"
+            elif hist_basis == "Weekly":
+                date_val = pd.to_datetime(start_date) + pd.DateOffset(weeks=i)
+                lbl = f"{date_val.year}-W{date_val.isocalendar().week:02d}"
             else:
                 date_val = pd.to_datetime(start_date) + pd.DateOffset(years=i)
                 lbl = str(date_val.year)
@@ -635,6 +686,7 @@ def show_projections():
             data_rows.append({
                 "Scenario": sc, "Period": lbl, 
                 "Revenue": revenue, "EBITDA": ebitda, "Net Income": net_income,
+                "Valuation": valuation,
                 "Gross Margin %": (gross_margin/revenue)*100 if revenue else 0,
                 "EBITDA Margin %": (ebitda/revenue)*100 if revenue else 0,
                 "Net Margin %": (net_income/revenue)*100 if revenue else 0
@@ -672,9 +724,17 @@ def show_projections():
         with c6:
             fig_nm = px.line(df_all, x="Period", y="Net Margin %", color="Scenario", markers=True, title="Net Margin %")
             st.plotly_chart(fig_nm, use_container_width=True)
+            
+        st.divider()
+        st.markdown("#### Subsidiary Valuation")
+        fig_val = px.bar(df_all, x="Period", y="Valuation", color="Scenario", barmode="group",
+                         title=f"Projected Valuation (Based on Market EBITDA Multiples for {target_sub})")
+        fig_val.update_layout(template="plotly_white", hovermode="x unified")
+        st.plotly_chart(fig_val, use_container_width=True)
+        st.info("ℹ️ Valuation calculated using EBITDA multiples: Conservative (~4.5x-6x), Base (~6x-8x), Robust (~7.5x-10x) depending on subsidiary type.")
 
     with tab_data:
-        pivot = df_all.pivot(index="Period", columns="Scenario", values=["Revenue", "EBITDA", "Net Income"])
+        pivot = df_all.pivot(index="Period", columns="Scenario", values=["Revenue", "EBITDA", "Net Income", "Valuation"])
         st.dataframe(pivot.style.format("${:,.0f}"), use_container_width=True)
         csv_proj = convert_df_to_csv(df_all)
         st.download_button("📥 Download Projections CSV", data=csv_proj, file_name="MagnaVita_Projections.csv", mime="text/csv")
@@ -688,7 +748,7 @@ def main():
     page = st.sidebar.radio("", ["Home", "Historical Performance", "Financial Projections"], label_visibility="collapsed")
     
     # Sidebar Footer - Pushed to bottom by CSS
-    st.sidebar.caption("v3.16 | Updated for Streamlit")
+    st.sidebar.caption("v3.20 | Updated for Streamlit")
     
     if page == "Home":
         show_home()
