@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
+import io
+import os
 import numpy as np
-import datetime
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -71,6 +73,25 @@ st.markdown("""
         font-size: 1.0rem;
         font-weight: 600;
         margin-bottom: 0.2rem;
+    }
+
+    /* 6. ACQUISITION SIMULATION CUSTOM STYLES */
+    .memo-box {
+        background-color: #f1f3f5;
+        padding: 25px;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        font-family: 'Courier New', Courier, monospace;
+        line-height: 1.4;
+    }
+    .section-header-blue {
+        background-color: #4e8cff;
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+        margin-top: 20px;
+        margin-bottom: 15px;
+        font-weight: bold;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -206,6 +227,10 @@ def get_historical_avg(df, sub, metric, freq='Monthly', year=None, service_types
 # 4. VIEW: HOME
 # ==========================================
 def show_home():
+    # Detect System Clock (Adjust to user's local timezone)
+    user_tz = pytz.timezone('America/New_York') 
+    now = datetime.datetime.now(user_tz)
+
     st.markdown("""
         <style>
         [data-testid="stImage"] { margin-top: 20px; }
@@ -233,7 +258,7 @@ def show_home():
             </p>
             """, unsafe_allow_html=True)
         
-        st.success("👋 Welcome! Use the sidebar to navigate between Historical Performance and Financial Projections.")
+        st.success("👋 Welcome! Use the sidebar to navigate between Historical Performance, Financial Projections, and the Acquisition Simulation.")
         with st.expander("📝 Read Me: Assumptions & Notes", expanded=True):
             st.markdown("""
             * **Data Source:** Modeled data based on 2024-2025 financial trends.
@@ -505,7 +530,6 @@ def show_projections():
         target_sub = st.selectbox("", ["Magna Vita (Consolidated)"] + list(df_master["Subsidiary"].unique()))
     with c2:
         st.markdown("<div class='step-header'>Baseline Period:</div>", unsafe_allow_html=True)
-        # UPDATED: Moved "Weekly" to the front of the list
         hist_basis = st.selectbox("", ["Weekly", "Monthly", "Quarterly", "Annual"])
     with c3:
         st.markdown("<div class='step-header'>Baseline Year:</div>", unsafe_allow_html=True)
@@ -580,7 +604,6 @@ def show_projections():
     with o3: inputs['other_exp'] = st.number_input(f"Other Expenses ({hist_basis})", value=500.0)
 
     st.divider()
-    
     st.subheader("Step 3: Define Drivers (Annual % Change)")
     st.info("Enter the expected annual % change for each driver.")
 
@@ -736,19 +759,260 @@ def show_projections():
     with tab_data:
         pivot = df_all.pivot(index="Period", columns="Scenario", values=["Revenue", "EBITDA", "Net Income", "Valuation"])
         st.dataframe(pivot.style.format("${:,.0f}"), use_container_width=True)
-        csv_proj = convert_df_to_csv(df_all)
-        st.download_button("📥 Download Projections CSV", data=csv_proj, file_name="MagnaVita_Projections.csv", mime="text/csv")
+        csv_proj = conver# ==========================================
 
 # ==========================================
-# 7. MAIN APP NAVIGATION
+# 7. VIEW: ACQUISITION SIMULATION (FINAL FIXED)
+# ==========================================
+def show_acquisition():
+    st.title("🤝 Strategic Acquisition Simulation")
+
+    # --- 0. PRE-LOAD DATABASE & CLEAN DATA ---
+    db_file = "acquisition_history.csv"
+    db_cols = ["Sim_ID", "Timestamp", "Simulator", "Target", "State", "Verdict", "ROI", "Leverage", "Reasons"]
+
+    # Global Defaults (Prevent NameError)
+    target_name = "New Target"
+    purchase_price = 0.0
+    target_state = "Minnesota"
+    verdict = "N/A"
+    reason_str = ""
+    cash_roi = 0.0
+    total_leverage = 0.0
+
+    if os.path.isfile(db_file):
+        df_hist_master = pd.read_csv(db_file)
+        
+        # --- FIX: DATA CLEANING LAYER ---
+        # 1. Fill missing columns
+        for col in db_cols:
+            if col not in df_hist_master.columns: df_hist_master[col] = "Unknown"
+        
+        # 2. Convert NaN values to "Unknown" to prevent StreamlitAPIException
+        df_hist_master = df_hist_master.fillna("Unknown")
+        
+        # 3. Ensure numeric types are preserved after fillna
+        df_hist_master["Sim_ID"] = pd.to_numeric(df_hist_master["Sim_ID"], errors='coerce').fillna(0).astype(int)
+        df_hist_master["Timestamp_DT"] = pd.to_datetime(df_hist_master["Timestamp"], errors='coerce')
+    else:
+        df_hist_master = pd.DataFrame(columns=db_cols)
+
+    # --- 1. SIMULATOR IDENTITY ---
+    st.markdown("<div class='section-header-blue'>Simulator Identity</div>", unsafe_allow_html=True)
+    id1, id2, id3 = st.columns(3)
+    with id1: sim_first = st.text_input("First Name", "Amanda")
+    with id2: sim_last = st.text_input("Last Name", "Zheng")
+    with id3: sim_pos = st.selectbox("Position", ["CEO", "Director", "Analyst", "Consultant"])
+    full_sim_name = f"{sim_first} {sim_last}"
+
+    # --- 2. INVESTMENT POLICY ---
+    st.markdown("<div class='section-header-blue'>Investment Policy: Pass/Fail Criteria</div>", unsafe_allow_html=True)
+    p1, p2, p3, p_new = st.columns(4)
+    with p1: target_max_lev_hurdle = st.number_input("Max Leverage Hurdle", 1.0, 6.0, 3.5, 0.1, format="%.1f")
+    with p2: target_min_ebitda_hurdle = st.number_input("Min Year 1 EBITDA Hurdle ($)", 500000, 10000000, 1500000, 50000)
+    with p3: target_max_price_hurdle = st.number_input("Max Multiple Hurdle (x)", 1.0, 15.0, 7.0, 0.1, format="%.1f")
+    with p_new: target_available_cash = st.number_input("Available Cash for Deal ($)", 0, 50000000, 2000000, 50000)
+
+    p4, p5, p6 = st.columns(3)
+    with p4: target_min_dscr_hurdle = st.number_input("Min DSCR Hurdle", 1.0, 3.0, 1.2, 0.1, format="%.1f")
+    with p5: target_min_roi_hurdle = st.number_input("Min Year 1 Cash ROI (%)", 0.0, 100.0, 15.0, 1.0, format="%.1f") / 100
+    with p6: check_accretion = st.toggle("Hurdle: Deal Must Be Margin Accretive", value=True)
+
+    # --- 3. INPUT BLOCKS (Target & Financials) ---
+    st.markdown("<div class='section-header-blue'>Step 1: Target Basic Information</div>", unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: target_name = st.text_input("Target Name", "Lodges Care Provider")
+    with c2: target_state = st.selectbox("State", ["Minnesota", "Wisconsin", "Iowa", "Illinois", "Florida"])
+    with c3: target_city = st.text_input("City", "Minneapolis")
+    with c4: target_closing = st.date_input("Estimated Closing Date", datetime.now())
+
+    st.markdown("<div class='section-header-blue'>Step 2: Financial Assumptions</div>", unsafe_allow_html=True)
+    f1, f2, f3, f4 = st.columns(4)
+    with f1: 
+        t_rev = st.number_input("Target TTM Revenue ($)", value=4000000)
+        t_ebitda = st.number_input("Target TTM EBITDA ($)", value=600000)
+    with f2:
+        retention_rate = st.slider("Retention (%)", 50, 100, 95) / 100
+        organic_growth = st.slider("Year 1 Growth (%)", -10, 20, 5) / 100
+    with f3:
+        ebitda_mult = st.slider("Purchase Multiple (x EBITDA)", 1.0, 15.0, 6.1, 0.1, format="%.1f")
+        synergy_pct = st.slider("Estimated Synergies (%)", -20, 50, 15) / 100
+    with f4:
+        fcf_conversion = st.slider("EBITDA to FCF Conversion (%)", 40, 95, 75) / 100
+        purchase_price = t_ebitda * ebitda_mult
+        st.metric("Implied Purchase Price", f"${purchase_price:,.0f}")
+
+    # --- 4. STEP 3: FINANCING ---
+    st.markdown("<div class='section-header-blue'>Step 3: Financing & Cash Requirement</div>", unsafe_allow_html=True)
+    fi1, fi2, fi3, fi4 = st.columns(4)
+    with fi1:
+        debt_pct = st.slider("Bank Loan (%)", 0, 100, 60) / 100
+        seller_pct = st.slider("Seller Note (%)", 0, 100, 10) / 100
+    with fi2:
+        int_rate = st.number_input("Bank Interest Rate (%)", 0.0, 25.0, 8.5, 0.1, format="%.1f") / 100
+        loan_term = st.slider("Loan Term (Years)", 3, 15, 7)
+    with fi3:
+        new_debt = purchase_price * debt_pct
+        seller_note = purchase_price * seller_pct
+        total_financing = new_debt + seller_note
+        st.metric("Total Financing $", f"${total_financing:,.0f}")
+    with fi4:
+        cash_equity_needed = purchase_price - total_financing
+        st.metric("Total Cash Equity Required", f"${cash_equity_needed:,.0f}")
+
+    # --- 5. CALCULATIONS & VERDICT ---
+    # Global df_master reference assumed from main app
+    mv_ebitda_base = df_master[df_master["Year"] == 2025]["EBITDA"].sum()
+    mv_rev_base = df_master[df_master["Year"] == 2025]["Revenue"].sum()
+    mv_fcf_base = mv_ebitda_base * 0.75 
+    mv_margin_base = (mv_ebitda_base / mv_rev_base) * 100
+    
+    adj_t_ebitda = t_ebitda * retention_rate
+    base_combined = mv_ebitda_base + adj_t_ebitda
+    year_1_ebitda_pre_synergy = (base_combined) * (1 + organic_growth)
+    synergy_val = adj_t_ebitda * synergy_pct
+    consolidated_ebitda_y1 = year_1_ebitda_pre_synergy + synergy_val
+    pf_rev_y1 = (mv_rev_base + t_rev) * (1 + organic_growth)
+    pf_margin_y1 = (consolidated_ebitda_y1 / pf_rev_y1) * 100
+    margin_impact = pf_margin_y1 - mv_margin_base
+    
+    total_leverage = (total_financing + 1500000) / consolidated_ebitda_y1
+    annual_debt_svc = (new_debt / loan_term) + (new_debt * int_rate)
+    deal_dscr = consolidated_ebitda_y1 / annual_debt_svc if annual_debt_svc > 0 else 0
+    net_fcf = (consolidated_ebitda_y1 * fcf_conversion) - annual_debt_svc
+    cash_roi = (net_fcf / cash_equity_needed) * 100 if cash_equity_needed > 0 else 0
+
+    fail_reasons = []
+    if total_leverage > target_max_lev_hurdle: fail_reasons.append("Leverage Gap")
+    if ebitda_mult > target_max_price_hurdle: fail_reasons.append("Over Valuation")
+    if deal_dscr < target_min_dscr_hurdle: fail_reasons.append("Insolvent Coverage")
+    if cash_equity_needed > target_available_cash: fail_reasons.append("Insufficient Cash")
+    
+    caution_reasons = []
+    if (cash_roi/100) < target_min_roi_hurdle: caution_reasons.append("Low ROI")
+    if consolidated_ebitda_y1 < target_min_ebitda_hurdle: caution_reasons.append("Sub-scale EBITDA")
+    if check_accretion and pf_margin_y1 < mv_margin_base: caution_reasons.append("Margin Dilution")
+
+    if fail_reasons: verdict, v_color, action = "FAIL: DE-PRIORITIZE DEAL", "#e74c3c", "Action: Terminate Deal"
+    elif caution_reasons: verdict, v_color, action = "CAUTION: REVIEW REQUIRED", "#f39c12", "Action: Deep-Dive Audit Required"
+    else: verdict, v_color, action = "PASS: STRATEGIC FIT", "#27ae60", "Action: Proceed"
+    
+    reason_str = " | ".join(fail_reasons + caution_reasons) if (fail_reasons or caution_reasons) else "All hurdles cleared."
+
+    st.markdown(f"<div style='background-color:{v_color}; padding:25px; border-radius:10px; text-align:center;'><h2 style='color:white; margin:0;'>{verdict}</h2><p style='color:white; font-weight:bold;'>{action}</p><p style='color:white; font-size:0.85em;'>{reason_str}</p></div>", unsafe_allow_html=True)
+
+    # --- 6. 8-KPI GRID ---
+    st.divider()
+    k1, k2, k3, k4 = st.columns(4)
+    with k1: st.metric("DSCR", f"{deal_dscr:.1f}x", delta=f"{deal_dscr - target_min_dscr_hurdle:.1f} vs Criteria")
+    with k2: st.metric("Combined EBITDA", f"${consolidated_ebitda_y1:,.0f}", delta=f"${consolidated_ebitda_y1 - target_min_ebitda_hurdle:,.0f} vs Criteria")
+    with k3: st.metric("Net Free Cash Flow", f"${net_fcf:,.0f}", delta=f"${net_fcf - mv_fcf_base:,.0f} vs MV Baseline")
+    with k4: st.metric("Cash ROI", f"{cash_roi:.1f}%", delta=f"{cash_roi - (target_min_roi_hurdle*100):.1f}% vs Criteria")
+
+    k5, k6, k7, k8 = st.columns(4)
+    with k5: st.metric("Total Debt / EBITDA", f"{total_leverage:.2f}x", delta=f"{total_leverage - target_max_lev_hurdle:.2f} vs Criteria", delta_color="inverse")
+    with k6: st.metric("Net Margin Impact", f"{pf_margin_y1:.1f}%", delta=f"{margin_impact:+.1f}% vs MV Baseline")
+    with k7: st.metric("Cash Equity Needed", f"${cash_equity_needed:,.0f}", delta=f"${target_available_cash - cash_equity_needed:,.0f} vs Criteria")
+    with k8: st.metric("Purchase Multiple", f"{ebitda_mult:.1f}x", delta=f"{ebitda_mult - target_max_price_hurdle:.1f} vs Criteria", delta_color="inverse")
+
+    # --- 7. TABS ---
+    t1, t2, t3, t4 = st.tabs(["📊 Financial Bridge", "📈 Amortization", "🧪 Sensitivity", "📝 Record Management"])
+    
+    with t1:
+        
+        labels = ["MV Base", "Target", "Growth", "Synergies", "Pro-Forma"]
+        y_vals = [mv_ebitda_base, adj_t_ebitda, (base_combined * organic_growth), synergy_val, consolidated_ebitda_y1]
+        fig = go.Figure(go.Waterfall(orientation="v", measure=["relative"]*4 + ["total"], x=labels, y=y_vals, text=[f"${v/1000:,.0f}k" for v in y_vals], textposition="outside"))
+        fig.update_layout(template="plotly_white", yaxis=dict(range=[0, consolidated_ebitda_y1*1.5]))
+        st.plotly_chart(fig, use_container_width=True)
+
+    with t2:
+        
+        amort = []
+        bal = new_debt
+        for y in range(1, loan_term + 1):
+            i_exp, p_pay = bal * int_rate, (new_debt / loan_term)
+            bal -= p_pay
+            amort.append({"Year": f"Y{y}", "Interest": i_exp, "Principal": p_pay, "Ending Balance": max(0, bal)})
+        st.table(pd.DataFrame(amort).set_index("Year").style.format("${:,.0f}"))
+
+    with t3:
+        st.subheader("Leverage Sensitivity Matrix (Debt/EBITDA)")
+        m_range = [ebitda_mult - 1, ebitda_mult, ebitda_mult + 1]
+        r_range = [retention_rate - 0.1, retention_rate, retention_rate + 0.1]
+        sens = [[((t_ebitda * m * (debt_pct + seller_pct)) + 1500000) / (mv_ebitda_base + (t_ebitda * r)) for r in r_range] for m in m_range]
+        df_sens = pd.DataFrame(sens, index=[f"{m:.1f}x Mult" for m in m_range], columns=[f"{r*100:.0f}% Ret" for r in r_range])
+        st.dataframe(df_sens.style.background_gradient(cmap="RdYlGn_r").format("{:.2f}x"), use_container_width=True)
+
+    with t4:
+        st.markdown("### 🔍 Advanced History Filtering")
+        if not df_hist_master.empty:
+            if st.button("🔄 Reset Filters"): st.rerun()
+            with st.expander("Filter Controls", expanded=True):
+                f_c1, f_c2, f_c3 = st.columns(3)
+                with f_c1:
+                    # FIX: Use unique values and handle potential empties
+                    v_opts = sorted(df_hist_master["Verdict"].unique().tolist())
+                    sel_verdict = st.multiselect("Verdict", options=v_opts, default=v_opts)
+                    
+                    s_opts = sorted(df_hist_master["State"].unique().tolist())
+                    sel_state = st.multiselect("State", options=s_opts, default=s_opts)
+                with f_c2:
+                    sim_opts = sorted(df_hist_master["Simulator"].unique().tolist())
+                    sel_sim = st.multiselect("Simulator", options=sim_opts, default=sim_opts)
+                    search_target = st.text_input("Search Target")
+                with f_c3:
+                    # Date selection safety
+                    if not df_hist_master["Timestamp_DT"].isna().all():
+                        min_d, max_d = df_hist_master["Timestamp_DT"].min().date(), df_hist_master["Timestamp_DT"].max().date()
+                        date_rng = st.date_input("Date Range", value=(min_d, max_d))
+                    else:
+                        st.write("No date data available.")
+                        date_rng = []
+
+            # Filter Implementation
+            df_filt = df_hist_master.copy()
+            df_filt = df_filt[(df_filt["Verdict"].isin(sel_verdict)) & (df_filt["State"].isin(sel_state)) & (df_filt["Simulator"].isin(sel_sim))]
+            if search_target: df_filt = df_filt[df_filt["Target"].str.contains(search_target, case=False)]
+            if len(date_rng) == 2:
+                df_filt = df_filt[(df_filt["Timestamp_DT"].dt.date >= date_rng[0]) & (df_filt["Timestamp_DT"].dt.date <= date_rng[1])]
+
+            st.dataframe(df_filt[db_cols].set_index("Sim_ID"), use_container_width=True)
+
+            to_del = st.multiselect("Select Integer IDs to Remove", options=df_filt["Sim_ID"].astype(int).tolist())
+            if to_del and st.button("🔴 Confirm Deletion & Re-index"):
+                df_new = df_hist_master[~df_hist_master["Sim_ID"].isin(to_del)].copy()
+                df_new["Sim_ID"] = range(1, len(df_new) + 1)
+                df_new[db_cols].to_csv(db_file, index=False)
+                st.rerun()
+        else:
+            st.info("No records found.")
+
+    # --- 8. SAVE ACTION ---
+    st.divider()
+    save_key = f"save_{target_name}_{int(purchase_price)}"
+    if save_key not in st.session_state:
+        if st.button("🚀 Save Simulation Result"):
+            next_id = 1 if df_hist_master.empty else int(df_hist_master["Sim_ID"].max() + 1)
+            new_rec = {
+                "Sim_ID": int(next_id), "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Simulator": full_sim_name, "Target": target_name, "State": target_state,
+                "Verdict": verdict, "ROI": round(cash_roi, 1), "Leverage": round(total_leverage, 2), "Reasons": reason_str
+            }
+            pd.concat([df_hist_master[db_cols], pd.DataFrame([new_rec])], ignore_index=True).to_csv(db_file, index=False)
+            st.session_state[save_key] = True
+            st.success(f"Saved Simulation ID #{next_id}")
+            st.rerun()
+    else:
+        st.info(f"✅ Simulation for {target_name} at ${purchase_price:,.0f} is recorded.")
+        
+# ==========================================
+# 8. MAIN APP NAVIGATION
 # ==========================================
 def main():
-    # Sidebar Navigation - No heading, just the radio buttons at the top
     st.sidebar.title("Navigation")
-    page = st.sidebar.radio("", ["Home", "Historical Performance", "Financial Projections"], label_visibility="collapsed")
-    
-    # Sidebar Footer - Pushed to bottom by CSS
-    st.sidebar.caption("v3.20 | Updated for Streamlit")
+    page = st.sidebar.radio("", ["Home", "Historical Performance", "Financial Projections", "Acquisition Simulation"], label_visibility="collapsed")
+    st.sidebar.caption("v4.5.1 | Strategic M&A Ready")
     
     if page == "Home":
         show_home()
@@ -756,6 +1020,8 @@ def main():
         show_history()
     elif page == "Financial Projections":
         show_projections()
+    elif page == "Acquisition Simulation":
+        show_acquisition()
 
 if __name__ == "__main__":
     main()
