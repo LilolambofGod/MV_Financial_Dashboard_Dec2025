@@ -12,63 +12,91 @@ from fpdf import FPDF
 # ==========================================
 # PDF ENGINE (FIXED KEYS)
 # ==========================================
-def create_pdf(rec, kpi_data):
+def create_pdf(rec, kpi_data, sources_uses=None, amort_schedule=None):
     pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # --- BLUE CORPORATE HEADER ---
+    # --- PAGE 1: EXECUTIVE SUMMARY ---
+    # (Header, Section 1: Identity, Section 2: KPIs, Section 3: Sources & Uses as previously built)
     pdf.set_fill_color(31, 73, 125) 
     pdf.set_text_color(255, 255, 255) 
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 15, "STRATEGIC ACQUISITION SUMMARY", ln=True, align='C', fill=True)
     
     pdf.set_text_color(0, 0, 0)
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 10, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='R')
-    pdf.ln(5)
-
-    # --- SECTION 1: DEAL IDENTITY ---
-    pdf.set_font("Arial", 'B', 12)
-    pdf.set_fill_color(240, 240, 240) 
-    pdf.cell(0, 10, " 1. Target Identity", ln=True, fill=True)
-    pdf.set_font("Arial", '', 11)
+    pdf.set_font("Arial", '', 9)
+    pdf.cell(0, 8, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='R')
     pdf.ln(2)
-    pdf.cell(95, 8, f"Target Name: {str(rec.get('Target', 'N/A'))}")
-    pdf.cell(95, 8, f"Simulator: {str(rec.get('Simulator', 'N/A'))}", ln=True)
-    pdf.cell(95, 8, f"Location: {str(rec.get('State', 'N/A'))}")
-    pdf.cell(95, 8, f"Final Verdict: {str(rec.get('Verdict', 'N/A'))}", ln=True)
-    pdf.ln(8)
 
-    # --- SECTION 2: PERFORMANCE TABLE ---
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, " 2. Key Performance Indicators", ln=True, fill=True)
-    pdf.ln(2)
-    pdf.set_fill_color(200, 200, 200)
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(110, 10, " Financial Metric", border=1, fill=True)
-    pdf.cell(80, 10, " Result", border=1, fill=True, ln=True, align='C')
+    # 1. Identity & Verdict
+    pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
+    pdf.cell(0, 8, " 1. Target Identity & Verdict", ln=True, fill=True)
+    pdf.set_font("Arial", '', 10); pdf.ln(2)
+    pdf.cell(95, 7, f"Target Name: {str(rec.get('Target', 'N/A'))}")
+    pdf.cell(95, 7, f"Location: {str(rec.get('State', 'N/A'))}", ln=True)
     
-    pdf.set_font("Arial", '', 10)
+    verdict = str(rec.get('Verdict', 'N/A')).upper()
+    if "PASS" in verdict: pdf.set_text_color(39, 174, 96)
+    elif "CAUTION" in verdict: pdf.set_text_color(241, 196, 15)
+    else: pdf.set_text_color(231, 76, 60)
+    pdf.set_font("Arial", 'B', 10); pdf.cell(0, 7, f"Final Verdict: {verdict}", ln=True)
+    pdf.set_text_color(0, 0, 0); pdf.ln(4)
+
+    # 2. Performance KPIs
+    pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
+    pdf.cell(0, 8, " 2. Key Performance Indicators", ln=True, fill=True)
+    pdf.set_font("Arial", '', 9); pdf.ln(2)
     for label, value in kpi_data.items():
-        if label != "Reasons":
-            pdf.cell(110, 10, f" {str(label)}", border=1)
-            pdf.cell(80, 10, f" {str(value)}", border=1, ln=True, align='C')
-    pdf.ln(8)
+        pdf.cell(110, 7, f" {str(label)}", border=1); pdf.cell(80, 7, f" {str(value)}", border=1, ln=True, align='C')
+    pdf.ln(6)
 
-    # --- SECTION 3: STRATEGIC REASONING ---
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, " 3. Decision Rationale", ln=True, fill=True)
-    pdf.ln(2)
-    pdf.set_font("Arial", '', 10)
-    reasoning = str(rec.get('Reasons', 'No notes provided.'))
-    pdf.multi_cell(0, 8, f"Observations: {reasoning}")
-    
-    pdf.set_y(-25)
-    pdf.set_font("Arial", 'I', 8)
-    pdf.cell(0, 10, "Magna Vita Strategic Planning - Internal Use Only", align='C')
-    
-    # FIX: Return bytes directly via a string output buffer
-    return pdf.output(dest='S').encode('latin-1')
+    # 3. Sources & Uses
+    if sources_uses:
+        pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
+        pdf.cell(0, 8, " 3. Sources & Uses of Funds", ln=True, fill=True); pdf.ln(2)
+        pdf.set_font("Arial", 'B', 9); pdf.set_fill_color(220, 220, 220)
+        pdf.cell(45, 7, "Sources", 1, 0, 'C', 1); pdf.cell(50, 7, "Amount", 1, 0, 'C', 1)
+        pdf.cell(45, 7, "Uses", 1, 0, 'C', 1); pdf.cell(50, 7, "Amount", 1, 1, 'C', 1)
+        pdf.set_font("Arial", '', 9)
+        s_items, u_items = sources_uses.get('sources', []), sources_uses.get('uses', [])
+        for i in range(max(len(s_items), len(u_items))):
+            s_l = s_items[i][0] if i < len(s_items) else ""; s_v = s_items[i][1] if i < len(s_items) else ""
+            u_l = u_items[i][0] if i < len(u_items) else ""; u_v = u_items[i][1] if i < len(u_items) else ""
+            pdf.cell(45, 6, f" {s_l}", 1); pdf.cell(50, 6, f" {s_v}", 1, 0, 'R')
+            pdf.cell(45, 6, f" {u_l}", 1); pdf.cell(50, 6, f" {u_v}", 1, 1, 'R')
+        pdf.ln(6)
+
+    # 4. Strategic Summary
+    pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
+    pdf.cell(0, 8, " 4. Executive Strategic Summary", ln=True, fill=True)
+    pdf.ln(2); pdf.set_font("Arial", '', 9)
+    reasoning = str(rec.get('Reasons', 'No notes provided.')).encode('latin-1', 'replace').decode('latin-1')
+    pdf.multi_cell(0, 5, reasoning)
+
+    # --- PAGE 2: AMORTIZATION SCHEDULE ---
+    if amort_schedule:
+        pdf.add_page()
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(0, 10, "Appendix A: Debt Amortization Schedule", ln=True)
+        pdf.set_font("Arial", '', 9); pdf.ln(5)
+        
+        # Table Header
+        pdf.set_fill_color(31, 73, 125); pdf.set_text_color(255, 255, 255)
+        pdf.cell(20, 8, "Year", 1, 0, 'C', 1); pdf.cell(40, 8, "Principal", 1, 0, 'C', 1)
+        pdf.cell(40, 8, "Interest", 1, 0, 'C', 1); pdf.cell(40, 8, "Total Payment", 1, 0, 'C', 1)
+        pdf.cell(50, 8, "Remaining Balance", 1, 1, 'C', 1)
+        
+        pdf.set_text_color(0, 0, 0)
+        for row in amort_schedule:
+            pdf.cell(20, 7, str(row['Year']), 1, 0, 'C')
+            pdf.cell(40, 7, f"${row['Principal']:,.0f}", 1, 0, 'R')
+            pdf.cell(40, 7, f"${row['Interest']:,.0f}", 1, 0, 'R')
+            pdf.cell(40, 7, f"${row['Total Pmt']:,.0f}", 1, 0, 'R')
+            pdf.cell(50, 7, f"${row['Balance']:,.0f}", 1, 1, 'R')
+
+    response = pdf.output(dest='S')
+    return bytes(response) if not isinstance(response, str) else response.encode('latin-1')
 
 # ==========================================
 # APP CONFIGURATION
@@ -900,16 +928,46 @@ def show_projections():
         pivot = df_all.pivot(index="Period", columns="Scenario", values=["Revenue", "EBITDA", "Net Income", "Valuation"])
         st.dataframe(pivot.style.format("${:,.0f}"), use_container_width=True)
         
-# ==========================================
-# # 7. VIEW: ACQUISITION SIMULATION (FINAL INTEGRATED VERSION)
+# ==============================================================================
+# 7. VIEW: ACQUISITION SIMULATION (FINAL INTEGRATED VERSION)
 # ==============================================================================
 def show_acquisition():
+    # --- 0. FETCH HISTORICAL MV BASE DATA (2025) ---
+    # Assuming your database has a 'year' or 'date' column
+    try:
+        # 1. Target the previous year relative to today (2025)
+        sim_year_target = 2025 
+        
+        # 2. Query your historical database (adjust table/column names)
+        # Using a sanitized filter to get the 2025 record
+        mv_base_record = db_historical_data[db_historical_data['year'] == sim_year_target].iloc[0]
+        
+        # 3. Assign variables for KPI deltas
+        mv_rev_base = mv_base_record['revenue']
+        mv_ebitda_base = mv_base_record['ebitda']
+        mv_fcf_base = mv_base_record['fcf']
+        mv_margin_base = (mv_ebitda_base / mv_rev_base) * 100 if mv_rev_base > 0 else 0
+        
+    except (IndexError, KeyError, NameError):
+        # Fallback if 2025 data isn't found to prevent app crash
+        st.warning("⚠️ Historical 2025 data not found. Using zero-baseline for deltas.")
+        mv_rev_base = 0
+        mv_ebitda_base = 0
+        mv_fcf_base = 0
+        mv_margin_base = 0
+
+    # --- 0. INITIALIZE GLOBAL DEFAULTS (Add this here!) ---
+    apply_stress = False
+    stress_retention_drop = 0.0
+    stress_rate_jump = 0.0
+
     # --- 0. CRITICAL RESET & STATE LOGIC ---
     if "reset_counter" not in st.session_state:
         st.session_state.reset_counter = 0
+    
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = "📊 Financial Bridge"
-    
+        
     rc = st.session_state.reset_counter
 
     # --- 1. DATABASE PRE-LOAD ---
@@ -933,26 +991,34 @@ def show_acquisition():
     with id3: sim_pos = st.selectbox("Position", ["", "CEO", "Director", "Analyst", "Consultant"], index=0, key=f"sp_{rc}")
     full_sim_name = f"{sim_first} {sim_last}".strip()
 
+    # --- INVESTMENT MANDATE: PASS/FAIL CRITERIA ---
     st.markdown("<div class='section-header-blue'>⚖️ Investment Mandate: Pass/Fail Criteria</div>", unsafe_allow_html=True)
     p1, p2, p3, p4 = st.columns(4)
-    with p1: target_max_lev_hurdle = st.number_input("Max Leverage Hurdle", 1.0, 10.0, value=3.5, step=0.1, key=f"h1_{rc}")
-    with p2: target_min_ebitda_hurdle = st.number_input("Min Year 1 EBITDA ($)", 0, 100000000, value=1500000, step=50000, key=f"h2_{rc}")
-    with p3: target_max_price_hurdle = st.number_input("Max Multiple Hurdle (x)", 1.0, 25.0, value=7.0, step=0.1, key=f"h3_{rc}")
-    with p4: target_available_cash = st.number_input("Available Cash ($)", 0, 500000000, value=5000000, step=100000, key=f"h4_{rc}")
+    with p1: target_max_lev_hurdle = st.number_input("Max Leverage Hurdle", 1.0, 10.0, value=None, placeholder="e.g. 3.5", key=f"h1_{rc}")
+    with p2: target_min_ebitda_hurdle = st.number_input("Min Year 1 EBITDA ($)", 0, 100000000, value=None, placeholder="e.g. 1500000", key=f"h2_{rc}")
+    with p3: target_max_price_hurdle = st.number_input("Max Multiple Hurdle (x)", 1.0, 25.0, value=None, placeholder="e.g. 7.0", key=f"h3_{rc}")
+    with p4: target_available_cash = st.number_input("Available Cash ($)", 0, 500000000, value=None, placeholder="e.g. 5000000", key=f"h4_{rc}")
 
     p5, p6, p7 = st.columns(3)
-    with p5: target_min_dscr_hurdle = st.number_input("Min DSCR Hurdle", value=1.2, step=0.1, key=f"h5_{rc}")
+    with p5: 
+        target_min_dscr_hurdle = st.number_input("Min DSCR Hurdle", 0.0, 5.0, value=None, placeholder="e.g. 1.2", step=0.1, key=f"h5_{rc}")
     with p6: 
-        roi_input_val = st.number_input("Min Year 1 ROI (%)", value=15.0, step=1.0, key=f"h6_{rc}")
-        target_min_roi_hurdle = roi_input_val / 100
-    with p7: check_accretion = st.toggle("Hurdle: Deal Must Be Margin Accretive", value=False, key=f"h7_{rc}")
+        roi_input_val = st.number_input("Min Year 1 ROI (%)", 0.0, 100.0, value=None, placeholder="e.g. 15.0", step=1.0, key=f"h6_{rc}")
+        target_min_roi_hurdle = (roi_input_val / 100) if roi_input_val else 0
+    with p7: 
+        check_accretion = st.toggle("Hurdle: Deal Must Be Margin Accretive", value=False, key=f"h7_{rc}")
 
+    # --- STEP 1: TARGET BASIC INFORMATION ---
     st.markdown("<div class='section-header-blue'>Step 1: Target Basic Information</div>", unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
-    with c1: target_name = st.text_input("Target Name", value="", key=f"tn_{rc}")
-    with c2: target_state = st.selectbox("State", ["", "Minnesota", "Wisconsin", "Iowa", "Illinois", "Florida"], index=0, key=f"ts_{rc}")
-    with c3: target_city = st.text_input("City", value="", key=f"tc_{rc}")
-    with c4: target_closing = st.date_input("Estimated Closing Date", value=None, min_value=date.today(), key=f"td_{rc}")
+    with c1: 
+        target_name = st.text_input("Target Name", value="", placeholder="Enter target company name", key=f"tn_{rc}")
+    with c2: 
+        target_state = st.selectbox("State", ["", "Minnesota", "Wisconsin", "Iowa", "Illinois", "Florida"], index=0, key=f"ts_{rc}")
+    with c3: 
+        target_city = st.text_input("City", value="", placeholder="Enter city", key=f"tc_{rc}")
+    with c4: 
+        target_closing = st.date_input("Estimated Closing Date", value=None, min_value=date.today(), key=f"td_{rc}")
 
     st.markdown("<div class='section-header-blue'>Step 2: Financial Assumptions</div>", unsafe_allow_html=True)
     f1, f2, f3, f4 = st.columns(4)
@@ -960,108 +1026,316 @@ def show_acquisition():
         t_rev = st.number_input("Target TTM Revenue ($)", value=None, placeholder="Enter Revenue", key=f"f1a_{rc}")
         t_ebitda = st.number_input("Target TTM EBITDA ($)", value=None, placeholder="Enter EBITDA", key=f"f1b_{rc}")
     with f2:
-        retention_rate = st.slider("Retention (%)", 0, 100, 90, key=f"f2a_{rc}") / 100
-        organic_growth = st.slider("Year 1 Growth (%)", -50, 100, 5, key=f"f2b_{rc}") / 100
+        # Change 90 to 0 and 5 to 0
+        retention_rate = st.slider("Retention (%)", 0, 100, 0, key=f"f2a_{rc}") / 100
+        organic_growth = st.slider("Year 1 Growth (%)", -50, 100, 0, key=f"f2b_{rc}") / 100
     with f3:
-        ebitda_mult = st.slider("Purchase Multiple (x)", 0.0, 20.0, 5.0, 0.1, key=f"f3a_{rc}")
-        synergy_pct = st.slider("Synergy Potential (%)", -50, 100, 10, key=f"f3b_{rc}") / 100
+        # Change 5.0 to 0.0 and 10 to 0
+        ebitda_mult = st.slider("Purchase Multiple (x)", 0.0, 20.0, 0.0, 0.1, key=f"f3a_{rc}")
+        synergy_pct = st.slider("Synergy Potential (%)", -50, 100, 0, key=f"f3b_{rc}") / 100
     with f4:
-        fcf_conv = st.slider("FCF Conversion (%)", 0, 100, 75, key=f"f4a_{rc}") / 100
+        # Change 75 to 0
+        fcf_conv = st.slider("FCF Conversion (%)", 0, 100, 0, key=f"f4a_{rc}") / 100
         purchase_price = (t_ebitda * ebitda_mult) if t_ebitda else 0
         st.metric("Implied Purchase Price", f"${purchase_price:,.0f}")
 
-    # --- 3. CALCULATION GUARD ---
+    # --- STEP 3: FINANCING (CLEAN START VERSION) ---
+    st.markdown("<div class='section-header-blue'>Step 3: Financing</div>", unsafe_allow_html=True)
+    fi1, fi2, fi3, fi4 = st.columns(4)
+    with fi1:
+        # Reset 50 to 0 and 10 to 0
+        debt_pct = st.slider("Bank Loan (%)", 0, 100, 0, key=f"fi1a_{rc}") / 100
+        seller_pct = st.slider("Seller Note (%)", 0, 100, 0, key=f"fi1b_{rc}") / 100
+    with fi2:
+        # Use value=None instead of 8.5
+        int_rate_input = st.number_input("Interest Rate (%)", value=None, placeholder="e.g. 8.5", key=f"fi2a_{rc}")
+        # Reset Term slider to 1
+        loan_term = st.slider("Term (Years)", 1, 25, 1, key=f"fi2b_{rc}")
+        transaction_fees = st.number_input("Est. Transaction Fees ($)", value=None, placeholder="e.g. 50000", key=f"fi2c_{rc}")
+    
+    # --- ENGINE PRE-CALCULATIONS (Safe Math) ---
+    # Convert interest rate input to decimal and sanitize
+    int_rate_val = (int_rate_input / 100) if int_rate_input is not None else 0.0
+    
+    # These 's_' variables ensure the app doesn't crash from NoneType errors
+    s_t_ebitda = t_ebitda if t_ebitda is not None else 0
+    s_purchase_price = s_t_ebitda * ebitda_mult
+    s_fees = transaction_fees if transaction_fees is not None else 0
+    
+    # Core Financing Totals
+    new_debt = s_purchase_price * debt_pct
+    s_seller_note = s_purchase_price * seller_pct
+    total_financing = new_debt + s_seller_note
+    cash_equity_needed = (s_purchase_price + s_fees) - total_financing
+
+    with fi3: 
+        st.metric("Total Financing", f"${total_financing:,.0f}")
+    with fi4: 
+        st.metric("Cash Equity", f"${cash_equity_needed:,.0f}")
+    
+    # --- ENGINE PRE-CALCULATIONS (Sanitization & Global Variables) ---
+    s_t_ebitda = t_ebitda if t_ebitda is not None else 0
+    s_purchase_price = s_t_ebitda * ebitda_mult
+    s_fees = transaction_fees if transaction_fees is not None else 0
+    s_new_debt = s_purchase_price * debt_pct
+    s_seller_note = s_purchase_price * seller_pct
+    total_financing = s_new_debt + s_seller_note
+    cash_equity_needed = (s_purchase_price + s_fees) - total_financing
+
+    with fi3: st.metric("Total Financing", f"${total_financing:,.0f}")
+    with fi4: st.metric("Cash Equity", f"${cash_equity_needed:,.0f}")
+
+    # --- UNIFIED READINESS CALCULATION ---
+    # Logic updated to require non-zero/non-None values for 0% initial state
     checklist = {
         "Identity": sim_first != "" and sim_last != "",
-        "Target": target_name != "" and target_state != "",
-        "Financials": t_ebitda is not None and ebitda_mult > 0,
-        "Mandate": all(v is not None for v in [target_max_lev_hurdle, target_min_ebitda_hurdle, target_max_price_hurdle])
+        "Mandates": all(v is not None for v in [target_max_lev_hurdle, target_min_ebitda_hurdle, target_max_price_hurdle]),
+        "Target Info": target_name != "" and target_state != "",
+        "Financials": t_ebitda is not None and ebitda_mult > 0, # ebitda_mult must be moved from 0
+        "Financing": int_rate_input is not None and debt_pct > 0, # Interest must be typed
     }
+    
     progress_pct = sum(checklist.values()) / len(checklist)
     bar_color = "red" if progress_pct < 0.5 else "orange" if progress_pct < 1.0 else "green"
     
     st.markdown(f"### 📋 Simulation Readiness: <span style='color:{bar_color};'>{int(progress_pct*100)}%</span>", unsafe_allow_html=True)
     st.progress(progress_pct)
 
-    if progress_pct < 1.0:
-        st.info("💡 **Simulator Guard:** Complete required fields to run analysis.")
-        st.stop()
-
-    # --- 4. ENGINE (Calculated here so variables exist for all downstream logic) ---
-    st.markdown("<div class='section-header-blue'>Step 3: Financing</div>", unsafe_allow_html=True)
-    fi1, fi2, fi3, fi4 = st.columns(4)
-    with fi1:
-        debt_pct = st.slider("Bank Loan (%)", 0, 100, 50, key=f"fi1a_{rc}") / 100
-        seller_pct = st.slider("Seller Note (%)", 0, 100, 10, key=f"fi1b_{rc}") / 100
-    with fi2:
-        int_rate_val = st.number_input("Interest Rate (%)", value=8.5, key=f"fi2a_{rc}") / 100
-        loan_term = st.slider("Term (Years)", 1, 25, 7, key=f"fi2b_{rc}")
+    # --- SIMULATION STATE MANAGEMENT ---
+    if f"run_sim_{rc}" not in st.session_state:
+        st.session_state[f"run_sim_{rc}"] = False
     
-    new_debt = purchase_price * debt_pct
-    seller_note = purchase_price * seller_pct
-    total_financing = new_debt + seller_note
-    cash_equity_needed = purchase_price - total_financing
-    with fi3: st.metric("Total Financing", f"${total_financing:,.0f}")
-    with fi4: st.metric("Cash Equity", f"${cash_equity_needed:,.0f}")
-
-    # Core Math Logic
-    mv_ebitda_base = df_master[df_master["Year"] == 2025]["EBITDA"].sum()
-    mv_rev_base = df_master[df_master["Year"] == 2025]["Revenue"].sum()
-    mv_fcf_base, mv_margin_base = mv_ebitda_base * 0.75, (mv_ebitda_base / mv_rev_base) * 100
+    # Define sim_is_active clearly for all downstream logic
+    sim_is_active = st.session_state[f"run_sim_{rc}"]
     
-    adj_t_ebitda = t_ebitda * retention_rate
+    # Define is_locked: True if any required field is incomplete
+    is_locked = progress_pct < 1.0
+
+    st.divider()
+    
+    # --- ANALYSIS GATE ---
+    if is_locked:
+        st.info("💡 **Simulator Guard:** Complete all fields to unlock analysis.")
+        st.button("🚀 Run Analysis", disabled=True, key=f"btn_dis_{rc}")
+    else:
+        if st.button("🚀 Run Analysis", type="primary", key=f"run_btn_{rc}"):
+            st.session_state[f"run_sim_{rc}"] = True
+            st.rerun() # Ensure UI updates immediately to show new sections
+
+    # ==============================================================================
+    # THE OUTPUT GATE: Everything below only shows if Analysis is active
+    # ==============================================================================
+    if sim_is_active:
+        # --- 4. SCENARIO STRESS TESTING (Now properly nested and gated) ---
+        st.markdown("### 🧪 Scenario Stress Testing")
+        
+        # This section is now only visible if sim_is_active is True
+        with st.expander("Configure Shock Scenario Parameters", expanded=False):
+            c_stress1, c_stress2 = st.columns(2)
+            with c_stress1:
+                stress_retention_drop = st.number_input(
+                    "Retention Shock (% Drop)", 
+                    value=10.0, step=1.0, 
+                    key=f"str_ret_{rc}"
+                ) / 100
+            with c_stress2:
+                stress_rate_jump = st.number_input(
+                    "Interest Rate Shock (bps Rise)", 
+                    value=200.0, step=50.0, 
+                    key=f"str_rate_{rc}"
+                ) / 10000
+        
+            apply_stress = st.toggle("🚨 Apply Stress Test to Results", value=False, key=f"str_tg_{rc}")
+            
+            if apply_stress:
+                st.warning("⚠️ **Scenario Mode:** Pro-forma results now reflect the shock parameters.")
+
+    # --- 5. GLOBAL ENGINE MATH ---
+    # SANITIZE INPUTS
+    s_t_rev = t_rev if t_rev is not None else 0
+    s_new_debt = s_new_debt if s_new_debt is not None else 0
+    s_seller_note = s_seller_note if s_seller_note is not None else 0
+    current_total_debt = s_new_debt + s_seller_note
+
+    # BASE DATA 
+    # --- 0. FETCH 2025 HISTORICAL DATA ---
+    try:
+    # Target 2025 data from your historical dataframe
+        mv_2025 = db_historical_data[db_historical_data['year'] == 2025].iloc[0]
+        mv_rev_base = mv_2025['revenue']
+        mv_ebitda_base = mv_2025['ebitda']
+        mv_fcf_base = mv_2025['fcf']
+        mv_margin_base = (mv_ebitda_base / mv_rev_base) * 100 if mv_rev_base > 0 else 0
+    except:
+    # Fallback to avoid NameErrors
+        mv_rev_base, mv_ebitda_base, mv_fcf_base, mv_margin_base = 0, 0, 0, 0
+
+    # 1. BASE CASE MATH (Permanent Record)
+    base_adj_t_ebitda = s_t_ebitda * retention_rate
+    base_consolidated_ebitda = (mv_ebitda_base + base_adj_t_ebitda) * (1 + organic_growth) + (base_adj_t_ebitda * synergy_pct)
+    base_annual_debt_svc = (s_new_debt / (loan_term if loan_term > 0 else 1)) + (s_new_debt * int_rate_val)
+    base_net_fcf = (base_consolidated_ebitda * fcf_conv) - base_annual_debt_svc
+    base_roi = (base_net_fcf / (cash_equity_needed if cash_equity_needed > 0 else 1) * 100)
+    base_leverage = (current_total_debt + 1500000) / (base_consolidated_ebitda if base_consolidated_ebitda != 0 else 1)
+
+    # 2. ACTIVE DISPLAY MATH (Used for KPIs and Proximity)
+    active_shock = apply_stress and sim_is_active
+    calc_retention = retention_rate - stress_retention_drop if active_shock else retention_rate
+    calc_int_rate = int_rate_val + stress_rate_jump if active_shock else int_rate_val
+    
+    adj_t_ebitda = s_t_ebitda * calc_retention
     synergy_val = adj_t_ebitda * synergy_pct
     growth_val = (mv_ebitda_base + adj_t_ebitda) * organic_growth
     consolidated_ebitda = (mv_ebitda_base + adj_t_ebitda) + growth_val + synergy_val
     
-    pf_rev_y1 = (mv_rev_base + t_rev) * (1 + organic_growth)
-    pf_margin_y1 = (consolidated_ebitda / pf_rev_y1 * 100) if pf_rev_y1 > 0 else 0
-    margin_impact = pf_margin_y1 - mv_margin_base
-    
-    total_leverage = (total_financing + 1500000) / consolidated_ebitda
-    annual_debt_svc = (new_debt / loan_term) + (new_debt * int_rate_val)
+    # Define Metrics needed for Proximity (Crucial Order)
+    total_leverage = (current_total_debt + 1500000) / (consolidated_ebitda if consolidated_ebitda != 0 else 1)
+    annual_debt_svc = (s_new_debt / (loan_term if loan_term > 0 else 1)) + (s_new_debt * calc_int_rate)
     deal_dscr = consolidated_ebitda / annual_debt_svc if annual_debt_svc > 0 else 0
     net_fcf = (consolidated_ebitda * fcf_conv) - annual_debt_svc
-    cash_roi = (net_fcf / cash_equity_needed * 100) if cash_equity_needed > 0 else 0
+    cash_roi = (net_fcf / (cash_equity_needed if cash_equity_needed > 0 else 1) * 100)
 
-    # Verdict Logic
-    fail_reasons = []
-    if total_leverage > target_max_lev_hurdle: fail_reasons.append("Leverage Gap")
-    if ebitda_mult > target_max_price_hurdle: fail_reasons.append("Over Valuation")
-    if deal_dscr < target_min_dscr_hurdle: fail_reasons.append("Insolvent Coverage")
-    if cash_equity_needed > target_available_cash: fail_reasons.append("Insufficient Cash")
+    # --- 5c. PROXIMITY & WEAKEST LINK (Sanitized) ---
+    # We use 'or 0' to handle None values gracefully
+    s_h_lev = target_max_lev_hurdle or 0
+    s_h_dscr = target_min_dscr_hurdle or 0
+    s_h_roi = target_min_roi_hurdle or 0
+
+    prox_leverage = (s_h_lev - total_leverage) / s_h_lev if s_h_lev != 0 else 0
+    prox_dscr = (deal_dscr - s_h_dscr) / s_h_dscr if s_h_dscr != 0 else 0
+    prox_roi = (cash_roi - s_h_roi) / s_h_roi if s_h_roi != 0 else 0
+
+    proximities = {"Leverage": prox_leverage, "DSCR": prox_dscr, "ROI": prox_roi}
+    weakest_link = min(proximities, key=lambda k: abs(proximities[k]))
+    prox_val = proximities[weakest_link] * 100
+
+    # 4. CAPACITY & REVENUE
+    # Use the sanitized hurdle defined in the Verdict Logic section
+    s_h_lev = target_max_lev_hurdle or 0
+
+    max_debt_allowed = (consolidated_ebitda * s_h_lev) - 1500000
+    debt_capacity_margin = max_debt_allowed - current_total_debt
     
-    if fail_reasons: verdict, v_color, action = "FAIL: DE-PRIORITIZE DEAL", "#e74c3c", "Action: Terminate Deal"
-    else: verdict, v_color, action = "PASS: STRATEGIC FIT", "#27ae60", "Action: Proceed with LOI"
-    reason_str = " | ".join(fail_reasons) if fail_reasons else "All hurdles cleared."
+    # Pro-forma Revenue & Margin
+    pf_rev_y1 = (mv_rev_base + s_t_rev) * (1 + organic_growth)
+    pf_margin_y1 = (consolidated_ebitda / pf_rev_y1 * 100) if pf_rev_y1 > 0 else 0
 
-    st.markdown(f"<div style='background-color:{v_color}; padding:25px; border-radius:10px; text-align:center; color:white; margin-bottom:20px;'><h2 style='color:white; margin:0;'>{verdict}</h2><p style='color:white; font-weight:bold; margin:5px 0;'>{action}</p><p style='color:white; font-size:0.9em; margin:0;'>{reason_str}</p></div>", unsafe_allow_html=True)
+   # --- VERDICT LOGIC (Sanitized for NoneTypes) ---
+    fail_reasons = []
+    caution_reasons = []
 
-    # --- 5. 8-KPI GRID ---
-    k1, k2, k3, k4 = st.columns(4)
-    with k1: st.metric("DSCR", f"{deal_dscr:.2f}x", delta=f"{deal_dscr - target_min_dscr_hurdle:.2f} vs Hurdle")
-    with k2: st.metric("Combined EBITDA", f"${consolidated_ebitda:,.0f}", delta=f"${consolidated_ebitda - target_min_ebitda_hurdle:,.0f} vs Goal")
-    with k3: st.metric("Net Free Cash Flow", f"${net_fcf:,.0f}", delta=f"${net_fcf - mv_fcf_base:,.0f} vs MV Base")
-    with k4: st.metric("Cash ROI", f"{cash_roi:.1f}%", delta=f"{cash_roi - (target_min_roi_hurdle*100):.1f}% vs Goal")
+    # 1. Sanitize hurdles: Use 'or 0' to handle None values gracefully
+    s_h_lev = target_max_lev_hurdle or 0
+    s_h_mult = target_max_price_hurdle or 0
+    s_h_dscr = target_min_dscr_hurdle or 0
+    s_h_cash = target_available_cash or 0
+    s_h_roi = roi_input_val or 0
 
-    k5, k6, k7, k8 = st.columns(4)
-    with k5: st.metric("Debt / EBITDA", f"{total_leverage:.2f}x", delta=f"{total_leverage - target_max_lev_hurdle:.2f} vs Hurdle", delta_color="inverse")
-    with k6: st.metric("Margin Profile", f"{pf_margin_y1:.1f}%", delta=f"{margin_impact:+.1f}% vs Base")
-    with k7: st.metric("Cash Required", f"${cash_equity_needed:,.0f}", delta=f"${target_available_cash - cash_equity_needed:,.0f} Budget")
-    with k8: st.metric("EBITDA Multiple", f"{ebitda_mult:.1f}x", delta=f"{ebitda_mult - target_max_price_hurdle:.1f} vs Limit", delta_color="inverse")
+    # 2. FAIL LOGIC: Only trigger if the hurdle is actually set (> 0)
+    # This prevents 'NoneType' comparison errors and premature fails
+    if s_h_lev > 0 and total_leverage > s_h_lev: 
+        fail_reasons.append("Leverage Gap")
+    if s_h_mult > 0 and ebitda_mult > s_h_mult: 
+        fail_reasons.append("Over Valuation")
+    if s_h_dscr > 0 and deal_dscr < s_h_dscr: 
+        fail_reasons.append("Insolvent Coverage")
+    if s_h_cash > 0 and cash_equity_needed > s_h_cash: 
+        fail_reasons.append("Insufficient Cash")
 
-    # --- 6. TABS ---
+    # 3. CAUTION LOGIC (None-Safe)
+    if not fail_reasons:
+        if s_h_lev > 0 and total_leverage > (s_h_lev * 0.9): 
+            caution_reasons.append("High Leverage Warning")
+        if s_h_dscr > 0 and deal_dscr < (s_h_dscr * 1.1): 
+            caution_reasons.append("Tight Debt Service")
+        if s_h_roi > 0 and cash_roi < (s_h_roi * 1.1): 
+            caution_reasons.append("Low ROI Margin")
+
+    # 4. FINAL VERDICT ASSIGNMENT
+    if fail_reasons:
+        verdict, v_color, action = "FAIL: DE-PRIORITIZE DEAL", "#e74c3c", "Action: Terminate Deal"
+        reason_str = "Critical Barriers: " + " | ".join(fail_reasons)
+    elif caution_reasons:
+        verdict, v_color, action = "CAUTION: MARGINAL FIT", "#f1c40f", "Action: Re-negotiate Price"
+        reason_str = "Warning Zones: " + " | ".join(caution_reasons)
+    else:
+        verdict, v_color, action = "PASS: STRATEGIC FIT", "#27ae60", "Action: Proceed with LOI"
+        reason_str = "All investment mandates cleared."
+
+    # --- OUTPUT DISPLAY ---
+    if sim_is_active:
+        # 1. Pre-calculate all impacts to prevent NameErrors
+        margin_impact = pf_margin_y1 - mv_margin_base
+        fcf_impact = net_fcf - mv_fcf_base
+
+        # 2. Verdict Banner
+        with st.spinner("Processing strategic pro-forma..."):
+            st.markdown(f"""
+                <div style='background-color:{v_color}; padding:25px; border-radius:10px; text-align:center; color:white; margin-bottom:20px;'>
+                    <h2 style='color:white; margin:0;'>{"⚠️ STRESSED: " if apply_stress else ""}{verdict}</h2>
+                    <p style='color:white; font-weight:bold; margin:5px 0;'>{action}</p>
+                    <p style='color:white; font-size:0.9em; margin:0;'>{reason_str}</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # 3. KPI Grid Row 1: Primary Debt & Return Metrics
+            k1, k2, k3, k4 = st.columns(4)
+            with k1: 
+                st.metric("DSCR", f"{deal_dscr:.2f}x", 
+                          delta=f"{deal_dscr - (s_h_dscr or 0):.2f} vs Hurdle")
+            with k2: 
+                st.metric("Combined EBITDA", f"${consolidated_ebitda:,.0f}", 
+                          delta=f"${consolidated_ebitda - (target_min_ebitda_hurdle or 0):,.0f} vs Goal")
+            with k3: 
+                st.metric("Net Free Cash Flow", f"${net_fcf:,.0f}", 
+                          delta=f"${fcf_impact:,.0f} vs 2025 Base")
+            with k4: 
+                st.metric("Cash ROI", f"{cash_roi:.1f}%", 
+                          delta=f"{cash_roi - (s_h_roi * 100):.1f}% vs Goal")
+
+            # 4. KPI Grid Row 2: Leverage & Operations
+            k5, k6, k7, k8 = st.columns(4)
+            with k5: 
+                st.metric("Debt / EBITDA", f"{total_leverage:.2f}x", 
+                          delta=f"{total_leverage - (s_h_lev or 0):.2f} vs Hurdle", delta_color="inverse")
+            with k6: 
+                # margin_impact is now safely defined above
+                st.metric("Margin Profile", f"{pf_margin_y1:.1f}%", 
+                          delta=f"{margin_impact:+.1f}% vs 2025 Base")
+            with k7: 
+                st.metric("Cash Required", f"${cash_equity_needed:,.0f}", 
+                          delta=f"${(s_h_cash or 0) - cash_equity_needed:,.0f} Budget")
+            with k8: 
+                st.metric("EBITDA Multiple", f"{ebitda_mult:.1f}x", 
+                          delta=f"{ebitda_mult - (s_h_mult or 0):.1f} vs Limit", delta_color="inverse")
+
+        # --- 6. TABS ---
+        # Initialize the session state for the tab if it doesn't exist
+    if 'active_tab' not in st.session_state:
+        st.session_state.active_tab = tabs_list[0]
+
+    # Use only ONE radio widget with a unique key
+    st.session_state.active_tab = st.radio(
+        "Simulation Navigation", 
+        tabs_list, 
+        horizontal=True, 
+        label_visibility="collapsed", 
+        key=f"nav_bar_unique_{rc}" # Added 'bar_unique' to prevent collisions
+    )
     st.divider()
-    tabs_list = ["📊 Financial Bridge", "📈 Amortization", "🧪 Sensitivity Analysis", "📝 Record Management"]
-    st.session_state.active_tab = st.radio("Nav", tabs_list, index=tabs_list.index(st.session_state.active_tab), horizontal=True, label_visibility="collapsed", key=f"nav_{rc}")
-    st.divider()
-
+ 
+    # 3. TAB CONTENT LOGIC
     if st.session_state.active_tab == "📊 Financial Bridge":
-        labels = ["Base", "Target", "Growth", "Synergies", "Pro-Forma"]
-        y_vals = [mv_ebitda_base, adj_t_ebitda, growth_val, synergy_val, consolidated_ebitda]
-        fig = go.Figure(go.Waterfall(measure=["relative"]*4 + ["total"], x=labels, y=y_vals, textposition="outside",
-            increasing={"marker": {"color": "#27ae60"}}, decreasing={"marker": {"color": "#e74c3c"}}, totals={"marker": {"color": "#2980b9"}}))
-        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("### EBITDA Bridge: 2025 Base to Pro-Forma")
+        # Logic to visualize the value-add of the acquisition
+        bridge_data = {
+            "2025 MV Base": mv_ebitda_base,
+            "Acquisition EBITDA": s_t_ebitda,
+            "Estimated Synergies": (s_t_ebitda * synergy_pct),
+            "Pro-Forma Total": consolidated_ebitda
+        }
+        # Use bar_chart for immediate visualization
+        st.bar_chart(bridge_data)
 
     elif st.session_state.active_tab == "📈 Amortization":
         amort_data = []
@@ -1072,35 +1346,133 @@ def show_acquisition():
             t_pmt = ann_pri + i_pmt
             rem_bal -= ann_pri
             amort_data.append({"Year": f"Y{y}", "Principal": ann_pri, "Interest": i_pmt, "Total Pmt": t_pmt, "Balance": max(0, rem_bal)})
-        df_amort = pd.DataFrame(amort_data)
-        st.dataframe(df_amort.set_index("Year").style.format("${:,.0f}"), use_container_width=True)
-        import io
+            df_amort = pd.DataFrame(amort_data)
+            st.dataframe(df_amort.set_index("Year").style.format("${:,.0f}"), use_container_width=True)
+        
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df_amort.to_excel(writer, index=False, sheet_name='Amortization')
         st.download_button("📥 Export Schedule", buffer.getvalue(), f"Amortization_{target_name}.xlsx", key=f"dl_am_{rc}")
+        
+        st.divider()
+        st.markdown("#### Debt Service Coverage Trend")
+        df_amort["DSCR_Safety"] = consolidated_ebitda / df_amort["Total Pmt"]
+        fig_dscr = px.line(df_amort, x="Year", y="DSCR_Safety", title="Projected DSCR Over Loan Term", markers=True)
+        fig_dscr.add_hline(y=target_min_dscr_hurdle, line_dash="dash", line_color="red", annotation_text="Lender Minimum Hurdle")
+        fig_dscr.update_layout(yaxis_title="DSCR Ratio (x)", template="plotly_white")
+        st.plotly_chart(fig_dscr, use_container_width=True)
 
     elif st.session_state.active_tab == "🧪 Sensitivity Analysis":
-        st.subheader("🧪 Strategic Risk Analysis")
+        st.markdown("### ROI Sensitivity Analysis")
+        
+        # --- FIXED ALIGNMENT BLOCK ---
+        # Ensure these lines match the indentation of the 'st.markdown' above
         c1, c2 = st.columns([3, 1])
+        
+        with c2:
+            st.info("💡 ROI Sensitivity: This heatmap visualizes how Year 1 Cash ROI changes relative to Purchase Multiple and Interest Rate shifts.")
+
         with c1:
-            def calc_roi_sens(m, r):
-                eq = (t_ebitda * m) * (1 - debt_pct - seller_pct)
-                y1 = ((mv_ebitda_base + (t_ebitda * r)) * (1 + organic_growth)) + (t_ebitda * r * synergy_pct)
-                return round(((y1 * fcf_conv) - annual_debt_svc) / eq * 100, 1) if eq > 0 else 0
-            r_rng, m_rng = [retention_rate+i for i in [-0.1, -0.05, 0, 0.05, 0.1]], [ebitda_mult+i for i in [1, 0.5, 0, -0.5, -1]]
-            sens_roi = pd.DataFrame([[calc_roi_sens(m, r) for r in r_rng] for m in m_rng], index=[f"{m:.1f}x" for m in m_rng], columns=[f"{int(r*100)}%" for r in r_rng])
-            st.plotly_chart(px.imshow(sens_roi, text_auto=True, color_continuous_scale="RdYlGn", title="ROI Sensitivity"), use_container_width=True)
-        with c2: st.info("**Matrix A:** Yield safety relative to retention risk.")
+            # Logic for generating a sensitivity matrix
+            multiples = [ebitda_mult * (1 + x) for x in [-0.2, -0.1, 0, 0.1, 0.2]]
+            rates = [int_rate_val * (1 + x) for x in [-0.2, -0.1, 0, 0.1, 0.2]]
+            
+            # Sensitivity calculation loop
+            sens_data = []
+            for m in multiples:
+                row = []
+                for r in rates:
+                    # Calculate theoretical ROI based on variable shifts
+                    temp_price = s_t_ebitda * m
+                    temp_debt = temp_price * debt_pct
+                    temp_interest = temp_debt * r
+                    temp_fcf = (s_t_ebitda * fcf_conv) - temp_interest
+                    temp_equity = (temp_price + s_fees) - (temp_debt + (temp_price * seller_pct))
+                    temp_roi = (temp_fcf / temp_equity * 100) if temp_equity > 0 else 0
+                    row.append(temp_roi)
+                sens_data.append(row)
+
+            # Display as a formatted dataframe heatmap
+            df_sens = pd.DataFrame(
+                sens_data, 
+                index=[f"{m:.1f}x" for m in multiples], 
+                columns=[f"{r*100:.1f}%" for r in rates]
+            )
+            st.write("Vertical: Purchase Multiple | Horizontal: Interest Rate")
+            st.dataframe(df_sens.style.background_gradient(cmap='RdYlGn').format("{:.1f}%"))
+
+        st.divider()
+        st.markdown("#### 2. Leverage Sensitivity (Lender Risk Analysis)")
+        l1, l2 = st.columns([3, 1])
+        with l1:
+            def calc_lev_sens(m, d_p):
+                debt_amt = (t_ebitda * m) * d_p
+                return round((debt_amt + 1500000) / (consolidated_ebitda if consolidated_ebitda != 0 else 1), 2)
+            
+            m_rng_lev = [ebitda_mult + i for i in [1, 0.5, 0, -0.5, -1]]
+            d_pct_rng = [debt_pct + i for i in [-0.2, -0.1, 0, 0.1, 0.2]]
+            sens_lev = pd.DataFrame([[calc_lev_sens(m, d) for d in d_pct_rng] for m in m_rng_lev], 
+                                index=[f"{m:.1f}x" for m in m_rng_lev], 
+                                columns=[f"{int(d*100)}%" for d in d_pct_rng])
+            
+            fig_lev = px.imshow(sens_lev, text_auto=True, color_continuous_scale="Reds", 
+                            color_continuous_midpoint=target_max_lev_hurdle, title="Total Leverage vs. Debt % and Multiples")
+            fig_lev.update_layout(xaxis_title="Bank Debt %", yaxis_title="Multiple (x)")
+            st.plotly_chart(fig_lev, use_container_width=True)
+        with l2:
+            st.warning(f"**Lender Risk:** Max Leverage Hurdle: {target_max_lev_hurdle}x.")
+
+        st.divider()
+        st.subheader("💡 Strategic Recommendation")
+        if cash_roi >= roi_input_val and total_leverage <= target_max_lev_hurdle:
+            st.success("The current structure is **Optimized**. Maximizes leverage while exceeding ROI goals.")
+        elif total_leverage > target_max_lev_hurdle:
+            st.error(f"**Action Required:** Deal is over-leveraged. Reduce Bank Debt or Multiple.")
+        else:
+            st.info("**Optimization Opportunity:** Additional 'Debt Capacity' exists. Could increase Bank Debt to preserve cash.")
+
+        st.divider()
+        st.subheader("🏦 Debt Capacity & Margin of Safety")
+        max_debt_allowed = (consolidated_ebitda * target_max_lev_hurdle) - 1500000
+        current_new_debt = s_new_debt + s_seller_note
+        remaining_capacity = max_debt_allowed - current_new_debt
+        
+        cap_c1, cap_c2 = st.columns([2, 1])
+        with cap_c1:
+            fig_cap = go.Figure(go.Indicator(
+                    mode = "gauge+number+delta", value = current_new_debt,
+                    title = {'text': "Used vs. Max Debt Capacity ($)", 'font': {'size': 18}},
+                    delta = {'reference': max_debt_allowed, 'increasing': {'color': "red"}, 'decreasing': {'color': "green"}},
+                    gauge = {
+                        'axis': {'range': [None, max(max_debt_allowed * 1.2, 1)], 'tickformat': "$,.0f"},
+                        'bar': {'color': "#1f497d"},
+                        'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': max_debt_allowed}
+                    }
+                ))
+                # Update layout and display the figure
+            fig_cap.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20))
+            st.plotly_chart(fig_cap, use_container_width=True)
+
+        with cap_c2:
+            st.markdown("#### Capital Observations")
+            if remaining_capacity > 0:
+                st.write(f"✅ **Dry Powder:** ${remaining_capacity:,.0f} available.")
+            else:
+                st.write(f"🚨 **Over-Leveraged:** ${abs(remaining_capacity):,.0f} over limit.")
 
     elif st.session_state.active_tab == "📝 Record Management":
         if not df_hist_master.empty:
-            # Multi-field Filters
+            # --- 1. SEARCH & FILTER SECTION ---
             with st.form("vault_search_form"):
                 f1, f2, f3 = st.columns(3)
-                with f1: v_filt = st.multiselect("Verdict", options=df_hist_master["Verdict"].unique(), default=list(df_hist_master["Verdict"].unique()))
-                with f2: t_filt, city_filt = st.text_input("Target Search"), st.text_input("City Search")
-                with f3: d_range = st.date_input("Date Range", value=(df_hist_master["Timestamp_DT"].min().date(), date.today()))
+                with f1: 
+                    v_filt = st.multiselect("Verdict", options=df_hist_master["Verdict"].unique(), default=list(df_hist_master["Verdict"].unique()))
+                with f2: 
+                    t_filt = st.text_input("Target Search")
+                    city_filt = st.text_input("City Search")
+                with f3: 
+                    d_range = st.date_input("Date Range", value=(df_hist_master["Timestamp_DT"].min().date(), date.today()))
+                
                 if st.form_submit_button("🔍 Run Search"):
                     mask = (df_hist_master["Verdict"].isin(v_filt))
                     if t_filt: mask = mask & (df_hist_master["Target"].str.contains(t_filt, case=False))
@@ -1110,38 +1482,212 @@ def show_acquisition():
             display_df = st.session_state.get("filtered_vault", df_hist_master)
             st.dataframe(display_df.drop(columns=["ROI_num", "Lev_num", "Timestamp_DT"], errors='ignore').set_index("Sim_ID"), use_container_width=True)
 
-            # Historical Recovery with Binary Fix
+            st.divider()
+            
+    # --- 2. RECOVERY & DELETION ACTIONS ---
+        c1, c2 = st.columns(2)
+            
+        with c1:
             st.markdown("### 📄 Recover Historical Memo")
-            sel_rec = st.selectbox("Select Record:", options=display_df.apply(lambda x: f"ID: {x['Sim_ID']} | {x['Target']}", axis=1), key=f"recovery_{rc}")
-            if st.button("📑 Generate Selected Memo"):
-                sid = int(sel_rec.split("|")[0].replace("ID: ", "").strip())
+            sel_rec_recov = st.selectbox("Select Record to Recover:", 
+                                        options=display_df.apply(lambda x: f"ID: {x['Sim_ID']} | {x['Target']}", axis=1), 
+                                        key=f"recovery_sel_{rc}")
+                
+            if st.button("📑 Generate Updated PDF Structure"):
+                sid = int(sel_rec_recov.split("|")[0].replace("ID: ", "").strip())
                 row = df_hist_master[df_hist_master["Sim_ID"] == sid].iloc[0]
+                    
                 try:
-                    hist_data = {"Target": str(row["Target"]), "Simulator": str(row["Simulator"]), "State": str(row["State"]), "Verdict": str(row["Verdict"]), "ROI": str(row["ROI"]), "Leverage": str(row["Leverage"])}
-                    pdf_bytes = create_pdf(hist_data, {"Reasons": str(row["Reasons"])})
-                    st.download_button("📥 Download Recovered PDF", pdf_bytes, f"Recovered_{row['Target']}.pdf", "application/pdf", key=f"dl_hist_{sid}")
-                except Exception as e: st.error(f"Error: {e}")
+                    # Map historical CSV columns to the IDENTITY record (Target info)
+                    hist_ident = {
+                        "Target": str(row["Target"]), 
+                        "Simulator": str(row["Simulator"]), 
+                        "State": str(row["State"]), 
+                        "Verdict": str(row["Verdict"]),
+                        "Reasons": str(row["Reasons"]) # Rationale/Audit Trail
+                    }
+                        
+                    # Re-construct the KPI Table dictionary for the PDF engine
+                    hist_kpis = {
+                        "Cash ROI": str(row["ROI"]),
+                        "Leverage (Debt/EBITDA)": str(row["Leverage"]),
+                        "City": str(row.get("City", "N/A")),
+                        "Timestamp": str(row["Timestamp"])
+                    }
+                        
+                    # Call the latest PDF engine with synced data
+                    pdf_bytes = create_pdf(hist_ident, hist_kpis)
+                        
+                    st.download_button(
+                        label="📥 Download Recovered PDF",
+                        data=pdf_bytes,
+                        file_name=f"Historical_Memo_{row['Target'].replace(' ', '_')}.pdf",
+                        mime="application/pdf",
+                        key=f"dl_hist_{sid}"
+                    )
+                except Exception as e: 
+                    st.error(f"Error mapping historical data to PDF: {e}")
 
-    # --- 7. FINAL ACTIONS ---
+        with c2:
+            st.markdown("### 🗑️ Data Housekeeping")
+            sel_rec_del = st.selectbox("Select Record to Permanent Delete:", 
+                                        options=display_df.apply(lambda x: f"ID: {x['Sim_ID']} | {x['Target']}", axis=1), 
+                                        key=f"delete_sel_{rc}")
+                
+            if st.button("❌ Delete Selected Record", type="secondary"):
+                sid_del = int(sel_rec_del.split("|")[0].replace("ID: ", "").strip())
+                # Update the master dataframe and save to CSV
+                df_updated = df_hist_master[df_hist_master["Sim_ID"] != sid_del]
+                df_updated.to_csv(db_file, index=False)
+                st.warning(f"Record ID {sid_del} has been deleted.")
+                st.rerun()
+    else:
+        st.info("No records found in the acquisition vault.")
+
+    # --- FINAL EXECUTIVE WRAPPER (Indented under if sim_is_active) ---
+    st.markdown("---")
+    with st.expander("📝 View Executive Deal Memo Summary", expanded=False):
+        memo_c1, memo_c2 = st.columns(2)
+        with memo_c1:
+            st.write(f"**Target:** {target_name} ({target_state})")
+            st.write(f"**Enterprise Value:** ${purchase_price:,.0f} ({ebitda_mult}x)")
+            st.write(f"**Transaction Costs:** ${transaction_fees:,.0f}")
+        with memo_c2:
+            # These values display current UI state (reflects stress if toggled)
+            st.write(f"**Pro-Forma EBITDA:** ${consolidated_ebitda:,.0f}")
+            st.write(f"**Year 1 Cash ROI:** {cash_roi:.1f}%")
+            st.write(f"**Closing Leverage:** {total_leverage:.2f}x")
+        st.info(f"**Final Verdict:** {verdict}")
+
     st.divider()
-    strat_notes = st.text_area("🗒️ Strategic Deal Memo", key=f"memo_{rc}")
+    st.markdown("### 📑 Finalize Deal Memo & Database Entry")
+        
+    # Audit Warning: Ensures user knows what is being saved
+    if apply_stress:
+        st.warning("⚠️ **Database Sync Alert:** Stress Test is ACTIVE. The system will save the **Base Case** (Pre-Shock) results to the Acquisition Vault to maintain historical data integrity.")
+    else:
+        st.info("ℹ️ The database will record the current **Base Case** results and your strategic rationale.")
+
+    st.caption("Tip: Press **Ctrl + Enter** to apply your notes before downloading.")
+        
+    strat_notes = st.text_area(
+        "Strategic Deal Memo", 
+        placeholder="Enter strategic rationale, synergy details, and risk mitigation...", 
+        key=f"memo_{rc}"
+    )
+
+    # UI State Confirmation for the Memo
+    if strat_notes:
+        st.markdown("✅ *Memo content accepted and ready for export.*")
+    else:
+        st.markdown("⚪ *Memo is currently empty.*")
+        
     b1, b2, b3 = st.columns(3)
+        
     with b1:
-        if st.button("📁 Save to Database", use_container_width=True, key=f"save_{rc}"):
-            new_entry = {"Sim_ID": len(df_hist_master)+1, "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"), "Simulator": full_sim_name, "Target": target_name, "City": target_city, "State": target_state, "Verdict": verdict.split(":")[0], "ROI": f"{cash_roi:.1f}%", "Leverage": f"{total_leverage:.2f}x", "Reasons": f"{reason_str} | Notes: {strat_notes}"}
+        if st.button("📁 Save Base Case to Vault", use_container_width=True, key=f"save_{rc}"):
+            # Audit trail: 'weakest_link' and 'prox_val' must be defined in the Global Engine Math
+            full_audit = f"BASE CASE ENTRY: {strat_notes} | Critical Risk: {weakest_link} @ {prox_val:+.1f}%"
+                
+            new_entry = {
+                "Sim_ID": len(df_hist_master)+1, 
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"), 
+                "Simulator": full_sim_name,
+                "Target": target_name, 
+                "City": target_city,
+                "State": target_state,
+                "Verdict": verdict.split(":")[0],
+                "ROI": f"{base_roi:.1f}%", 
+                "Leverage": f"{base_leverage:.2f}x",
+                "Reasons": full_audit
+            }
             pd.concat([df_hist_master, pd.DataFrame([new_entry])]).to_csv(db_file, index=False)
-            st.success("✅ Simulation Saved Successfully.")
+            st.success("✅ Base Case saved to database.")
+
     with b2:
+        # Generate PDF Summary (Reflects current UI state)
         if st.button("📄 Generate PDF Summary", use_container_width=True, key=f"pdf_btn_{rc}"):
-            try:
-                live_pdf_data = {"Target": str(target_name), "Simulator": str(full_sim_name), "State": str(target_state), "Verdict": f"{verdict} ({action})", "ROI": f"{cash_roi:.1f}%", "Leverage": f"{total_leverage:.2f}x"}
-                pdf_bytes = create_pdf(live_pdf_data, {"Purchase Price": f"${purchase_price:,.0f}", "Reasons": str(strat_notes) if strat_notes else "N/A"})
-                st.download_button("📥 Download PDF", pdf_bytes, f"Summary_{target_name}.pdf", "application/pdf", key=f"dl_pdf_{rc}")
-            except Exception as e: st.error(f"PDF Error: {e}")
+            if not strat_notes:
+                st.warning("⚠️ Please enter strategic notes before generating the report.")
+            else:
+                try:
+                    # 1. Identity & Narrative
+                    live_pdf_data = {
+                        "Target": str(target_name), 
+                        "Simulator": str(full_sim_name), 
+                        "State": str(target_state), 
+                        "Verdict": f"{verdict} ({action})", 
+                        "Reasons": f"STRATEGIC RATIONALE:\n{strat_notes}\n\nSENSITIVITY ALERT:\n{weakest_link} is {prox_val:+.1f}% from hurdle."
+                    }
+                        
+                    # 2. Key Performance Indicators
+                    performance_kpis = {
+                        "Enterprise Value": f"${purchase_price:,.0f}",
+                        "Purchase Multiple": f"{ebitda_mult}x",
+                        "Transaction Fees": f"${transaction_fees:,.0f}",
+                        "Total Cash Equity Needed": f"${cash_equity_needed:,.0f}",
+                        "Pro-Forma EBITDA (Y1)": f"${consolidated_ebitda:,.0f}",
+                        "Debt / EBITDA (Leverage)": f"{total_leverage:.2f}x",
+                        "Cash ROI (Year 1)": f"{cash_roi:.1f}%",
+                        "Debt Capacity Margin": f"${debt_capacity_margin:,.0f}"
+                    }
+
+                    # 3. Sources & Uses Table
+                    sources_and_uses = {
+                        "sources": [
+                            ("Bank Debt", f"${s_new_debt:,.0f}"),
+                            ("Seller Note", f"${s_seller_note:,.0f}"),
+                            ("Cash Equity", f"${cash_equity_needed:,.0f}"),
+                            ("Total Sources", f"${(s_new_debt + s_seller_note + cash_equity_needed):,.0f}")
+                        ],
+                        "uses": [
+                            ("Purchase Price", f"${purchase_price:,.0f}"),
+                            ("Transaction Fees", f"${s_fees:,.0f}"),
+                            ("Total Uses", f"${(purchase_price + s_fees):,.0f}")
+                        ]
+                    }
+
+                    # 4. Amortization Schedule (Internal calculation for scope safety)
+                    pdf_amort_data = []
+                    temp_bal = s_new_debt
+                    temp_pri = s_new_debt / (loan_term if loan_term > 0 else 1)
+                    for y in range(1, loan_term + 1):
+                        i_pmt = temp_bal * calc_int_rate
+                        t_pmt = temp_pri + i_pmt
+                        temp_bal -= temp_pri
+                        pdf_amort_data.append({
+                            "Year": f"Y{y}", "Principal": temp_pri, 
+                            "Interest": i_pmt, "Total Pmt": t_pmt, "Balance": max(0, temp_bal)
+                        })
+
+                    # 5. Build PDF
+                    pdf_bytes = create_pdf(
+                        live_pdf_data, 
+                        performance_kpis, 
+                        sources_uses=sources_and_uses, 
+                        amort_schedule=pdf_amort_data
+                    )
+                        
+                    st.download_button(
+                        label="📥 Download Full Strategic Report", 
+                        data=pdf_bytes, 
+                        file_name=f"MagnaVita_Report_{target_name}.pdf", 
+                        mime="application/pdf", 
+                        key=f"dl_pdf_{rc}"
+                    )
+                except Exception as e: 
+                    st.error(f"PDF Generation Error: {e}")
+
     with b3:
-        if st.button("🔄 Restart Simulation", use_container_width=True, key=f"restart_{rc}"):
-            st.session_state.update({"reset_counter": rc + 1, "active_tab": "📊 Financial Bridge"})
-            st.rerun()
+        if st.button("🔄 Restart & Clear All", use_container_width=True, key=f"restart_btn_{rc}"):
+            # Clear all specific simulation keys from memory
+            keys_to_clear = [k for k in st.session_state.keys() if any(x in k for x in ["sf_", "sl_", "sp_", "h", "tn_", "ts_", "tc_", "td_", "f", "fi", "memo", "str_", "run_sim"])]
+            for key in keys_to_clear:
+                del st.session_state[key]
+            
+            # Increment reset counter to rotate widget keys
+            st.session_state.reset_counter += 1 
+    st.rerun()
 
 # ==========================================
 # 8. MAIN APP NAVIGATION
