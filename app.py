@@ -9,6 +9,15 @@ import plotly.express as px
 import plotly.graph_objects as go
 from fpdf import FPDF
 
+
+@st.fragment
+def search_vault(df_hist_master):
+    # This block can rerun independently without reloading the simulation
+    with st.form("vault_search_form"):
+        t_filt = st.text_input("Target Search")
+        if st.form_submit_button("🔍 Run Search"):
+            # Update specific session state
+            st.session_state.filtered_vault = df_hist_master[df_hist_master["Target"].str.contains(t_filt)]
 # ==========================================
 # PDF ENGINE (FIXED KEYS)
 # ==========================================
@@ -933,30 +942,24 @@ def show_projections():
 # ==============================================================================
 def show_acquisition():
     # --- 0. FETCH HISTORICAL MV BASE DATA (2025) ---
-    # Assuming your database has a 'year' or 'date' column
     try:
-        # 1. Target the previous year relative to today (2025)
-        sim_year_target = 2025 
+        # Instead of loading a file, we filter the existing master dataframe
+        sim_year_target = 2025
+        df_2025 = df_master[df_master['Year'] == sim_year_target]
         
-        # 2. Query your historical database (adjust table/column names)
-        # Using a sanitized filter to get the 2025 record
-        mv_base_record = db_historical_data[db_historical_data['year'] == sim_year_target].iloc[0]
-        
-        # 3. Assign variables for KPI deltas
-        mv_rev_base = mv_base_record['revenue']
-        mv_ebitda_base = mv_base_record['ebitda']
-        mv_fcf_base = mv_base_record['fcf']
-        mv_margin_base = (mv_ebitda_base / mv_rev_base) * 100 if mv_rev_base > 0 else 0
-        
-    except (IndexError, KeyError, NameError):
-        # Fallback if 2025 data isn't found to prevent app crash
-        st.warning("⚠️ Historical 2025 data not found. Using zero-baseline for deltas.")
-        mv_rev_base = 0
-        mv_ebitda_base = 0
-        mv_fcf_base = 0
-        mv_margin_base = 0
+        if not df_2025.empty:
+            mv_rev_base = df_2025['Revenue'].sum()
+            mv_ebitda_base = df_2025['EBITDA'].sum()
+            mv_fcf_base = (df_2025['EBITDA'].sum() * 0.75)
+            mv_margin_base = (mv_ebitda_base / mv_rev_base * 100) if mv_rev_base > 0 else 0
+        else:
+            raise ValueError("No 2025 data found")
+    except:
+        # Fallback values to prevent NameErrors in the UI
+        mv_rev_base = mv_ebitda_base = mv_fcf_base = mv_margin_base = 0
 
-    # --- 0. INITIALIZE GLOBAL DEFAULTS (Add this here!) ---
+    # --- 0. INITIALIZE GLOBAL DEFAULTS ---
+    # These prevent NameErrors during the initial 0% readiness state
     apply_stress = False
     stress_retention_drop = 0.0
     stress_rate_jump = 0.0
@@ -1097,8 +1100,23 @@ def show_acquisition():
         "Target Info": target_name != "" and target_state != "",
         "Financials": t_ebitda is not None and ebitda_mult > 0, # ebitda_mult must be moved from 0
         "Financing": int_rate_input is not None and debt_pct > 0, # Interest must be typed
+        "Target EBITDA": t_ebitda is not None,
+        "Debt Percentage": debt_pct is not None,
+        "Interest Rate": int_rate_val is not None,
+        "Loan Term": loan_term is not None,
+        "Transaction Fees": transaction_fees is not None
     }
     
+    readiness_pct = (sum(checklist.values()) / len(checklist)) * 100
+    
+    st.write(f"### 📋 Simulation Readiness: {readiness_pct:.0f}%")
+    st.progress(readiness_pct / 100)
+
+    if readiness_pct < 100:
+        st.info("💡 **Simulator Guard:** Enter Interest Rate, Loan Term, and Fees to unlock analysis.")
+    else:
+        if st.button("🚀 Run Analysis", use_container_width=True):
+            st.session_state.sim_is_active = True
     progress_pct = sum(checklist.values()) / len(checklist)
     bar_color = "red" if progress_pct < 0.5 else "orange" if progress_pct < 1.0 else "green"
     
@@ -1164,12 +1182,15 @@ def show_acquisition():
     # BASE DATA 
     # --- 0. FETCH 2025 HISTORICAL DATA ---
     try:
-    # Target 2025 data from your historical dataframe
-        mv_2025 = db_historical_data[db_historical_data['year'] == 2025].iloc[0]
-        mv_rev_base = mv_2025['revenue']
-        mv_ebitda_base = mv_2025['ebitda']
-        mv_fcf_base = mv_2025['fcf']
-        mv_margin_base = (mv_ebitda_base / mv_rev_base) * 100 if mv_rev_base > 0 else 0
+    # Target 2025 data from df_master
+        df_2025_alt = df_master[df_master['Year'] == 2025]
+        if not df_2025_alt.empty:
+            mv_rev_base = df_2025_alt['Revenue'].sum()
+            mv_ebitda_base = df_2025_alt['EBITDA'].sum()
+            mv_fcf_base = (df_2025_alt['EBITDA'].sum() * 0.75)
+            mv_margin_base = (mv_ebitda_base / mv_rev_base * 100) if mv_rev_base > 0 else 0
+        else:
+            raise ValueError("No 2025 data")
     except:
     # Fallback to avoid NameErrors
         mv_rev_base, mv_ebitda_base, mv_fcf_base, mv_margin_base = 0, 0, 0, 0
@@ -1268,7 +1289,7 @@ def show_acquisition():
 
     # --- OUTPUT DISPLAY ---
     if sim_is_active:
-        # 1. Pre-calculate all impacts to prevent NameErrors
+        # 1. Pre-calculate impacts to solve NameErrors
         margin_impact = pf_margin_y1 - mv_margin_base
         fcf_impact = net_fcf - mv_fcf_base
 
@@ -1282,41 +1303,31 @@ def show_acquisition():
                 </div>
             """, unsafe_allow_html=True)
 
-            # 3. KPI Grid Row 1: Primary Debt & Return Metrics
+            # 3. 8-Grid KPI Layout (Row 1 & 2)
             k1, k2, k3, k4 = st.columns(4)
-            with k1: 
-                st.metric("DSCR", f"{deal_dscr:.2f}x", 
-                          delta=f"{deal_dscr - (s_h_dscr or 0):.2f} vs Hurdle")
-            with k2: 
-                st.metric("Combined EBITDA", f"${consolidated_ebitda:,.0f}", 
-                          delta=f"${consolidated_ebitda - (target_min_ebitda_hurdle or 0):,.0f} vs Goal")
-            with k3: 
-                st.metric("Net Free Cash Flow", f"${net_fcf:,.0f}", 
-                          delta=f"${fcf_impact:,.0f} vs 2025 MV Base")
-            with k4: 
-                st.metric("Cash ROI", f"{cash_roi:.1f}%", 
-                          delta=f"{cash_roi - (s_h_roi * 100):.1f}% vs Goal")
+            with k1: st.metric("DSCR", f"{deal_dscr:.2f}x", delta=f"{deal_dscr - (s_h_dscr or 0):.2f} vs Hurdle")
+            with k2: st.metric("Combined EBITDA", f"${consolidated_ebitda:,.0f}", delta=f"${consolidated_ebitda - (target_min_ebitda_hurdle or 0):,.0f} vs Goal")
+            with k3: st.metric("Net Free Cash Flow", f"${net_fcf:,.0f}", delta=f"${fcf_impact:,.0f} vs 2025 MV Base")
+            with k4: st.metric("Cash ROI", f"{cash_roi:.1f}%", delta=f"{cash_roi - (s_h_roi * 100):.1f}% vs Goal")
 
-            # 4. KPI Grid Row 2: Leverage & Operations
             k5, k6, k7, k8 = st.columns(4)
-            with k5: 
-                st.metric("Debt / EBITDA", f"{total_leverage:.2f}x", 
-                          delta=f"{total_leverage - (s_h_lev or 0):.2f} vs Hurdle", delta_color="inverse")
-            with k6: 
-                st.metric("Margin Profile", f"{pf_margin_y1:.1f}%", 
-                          delta=f"{margin_impact:+.1f}% vs 2025 MV Base")
-            with k7: 
-                st.metric("Cash Required", f"${cash_equity_needed:,.0f}", 
-                          delta=f"${(s_h_cash or 0) - cash_equity_needed:,.0f} Budget")
-            with k8: 
-                st.metric("EBITDA Multiple", f"{ebitda_mult:.1f}x", 
-                          delta=f"{ebitda_mult - (s_h_mult or 0):.1f} vs Limit", delta_color="inverse")
+            with k5: st.metric("Debt / EBITDA", f"{total_leverage:.2f}x", delta=f"{total_leverage - (s_h_lev or 0):.2f} vs Hurdle", delta_color="inverse")
+            with k6: st.metric("Margin Profile", f"{pf_margin_y1:.1f}%", delta=f"{margin_impact:+.1f}% vs 2025 MV Base")
+            with k7: st.metric("Cash Required", f"${cash_equity_needed:,.0f}", delta=f"${(s_h_cash or 0) - cash_equity_needed:,.0f} Budget")
+            with k8: st.metric("EBITDA Multiple", f"{ebitda_mult:.1f}x", delta=f"{ebitda_mult - (s_h_mult or 0):.1f} vs Limit", delta_color="inverse")
 
-        # 5. FIXED: None-safe formatting for Transaction Costs
-            st.write(f"**Transaction Costs:** ${transaction_fees if transaction_fees is not None else 0:,.0f}")
-        # 1. Executive Deal Memo Summary
-            st.markdown("### 📝 Executive Deal Memo Summary")
-        # (Your logic for generating the memo text goes here)
+        # 4. Gated Strategic Memo & Transaction Summary
+        st.divider()
+        st.markdown("### 📝 Executive Deal Memo Summary")
+        
+        # None-safe transaction fee display
+        st.write(f"**Transaction Costs:** ${transaction_fees if transaction_fees is not None else 0:,.0f}")
+        
+        st.text_area("Strategic Notes", placeholder="Rationale...", key=f"memo_{rc}")
+
+        # 5. Acquisition Vault Information (Gated)
+        if 'acquisition_records' not in st.session_state or not st.session_state.acquisition_records:
+            st.info("ℹ️ No records found in the acquisition vault. Save a deal to start your archive.")
 
         # --- 6. TABS NAVIGATION (Gated and Aligned) ---
         st.divider()
@@ -1474,34 +1485,34 @@ def show_acquisition():
                 else:
                     st.write(f"🚨 **Over-Leveraged:** ${abs(remaining_capacity):,.0f} over limit.")
 
-            elif st.session_state.active_tab == "📝 Record Management":
+        elif st.session_state.active_tab == "📝 Record Management":
         # Check if master dataframe exists and is not empty
-        if not df_hist_master.empty:
+            if not df_hist_master.empty:
             # --- 1. SEARCH & FILTER SECTION ---
-            with st.form("vault_search_form"):
-                f1, f2, f3 = st.columns(3)
+                with st.form("vault_search_form"):
+                    f1, f2, f3 = st.columns(3)
                 
-                with f1: 
-                    v_filt = st.multiselect("Verdict", 
+                    with f1: 
+                        v_filt = st.multiselect("Verdict", 
                                             options=df_hist_master["Verdict"].unique(), 
                                             default=list(df_hist_master["Verdict"].unique()))
-                with f2: 
-                    t_filt = st.text_input("Target Search")
-                    city_filt = st.text_input("City Search")
+                    with f2: 
+                        t_filt = st.text_input("Target Search")
+                        city_filt = st.text_input("City Search")
                     
-                with f3: 
+                    with f3: 
                     # Ensure 'date' is imported at the top of your file
-                    d_range = st.date_input("Date Range", 
+                        d_range = st.date_input("Date Range", 
                                             value=(df_hist_master["Timestamp_DT"].min().date(), date.today()))
                 
                 # The submit button must be inside the 'with st.form' block
-                if st.form_submit_button("🔍 Run Search"):
-                    mask = (df_hist_master["Verdict"].isin(v_filt))
-                    if t_filt: 
-                        mask = mask & (df_hist_master["Target"].str.contains(t_filt, case=False))
-                    if city_filt: 
-                        mask = mask & (df_hist_master["City"].str.contains(city_filt, case=False))
-                    st.session_state.filtered_vault = df_hist_master[mask]
+                    if st.form_submit_button("🔍 Run Search"):
+                        mask = (df_hist_master["Verdict"].isin(v_filt))
+                        if t_filt: 
+                            mask = mask & (df_hist_master["Target"].str.contains(t_filt, case=False))
+                        if city_filt: 
+                            mask = mask & (df_hist_master["City"].str.contains(city_filt, case=False))
+                        st.session_state.filtered_vault = df_hist_master[mask]
 
             # --- 2. DISPLAY SECTION ---
             # Retrieve filtered data or show full master list
@@ -1573,8 +1584,8 @@ def show_acquisition():
                     df_updated.to_csv(db_file, index=False)
                     st.warning(f"Record ID {sid_del} has been deleted.")
                     st.rerun()
-        else:
-            st.info("No records found in the acquisition vault.")
+                else:
+                    st.info("No records found in the acquisition vault.")
 
     # --- FINAL EXECUTIVE WRAPPER (Indented under if sim_is_active) ---
         st.markdown("---")
@@ -1583,7 +1594,7 @@ def show_acquisition():
             with memo_c1:
                 st.write(f"**Target:** {target_name} ({target_state})")
                 st.write(f"**Enterprise Value:** ${purchase_price:,.0f} ({ebitda_mult}x)")
-                st.write(f"**Transaction Costs:** ${transaction_fees:,.0f}")
+                st.write(f"**Transaction Costs:** ${transaction_fees if transaction_fees is not None else 0:,.0f}")
             with memo_c2:
             # These values display current UI state (reflects stress if toggled)
                 st.write(f"**Pro-Forma EBITDA:** ${consolidated_ebitda:,.0f}")
