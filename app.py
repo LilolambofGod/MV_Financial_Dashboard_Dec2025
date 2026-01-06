@@ -1309,20 +1309,25 @@ def show_acquisition():
                 st.metric("EBITDA Multiple", f"{ebitda_mult:.1f}x", 
                           delta=f"{ebitda_mult - (s_h_mult or 0):.1f} vs Limit", delta_color="inverse")
 
-        # --- 6. TABS ---
-        # Initialize the session state for the tab if it doesn't exist
+     # --- 6. TABS NAVIGATION (FIXED ORDER) ---
+    st.divider()
+    
+    # 1. Define the list FIRST to avoid NameError
+    tabs_list = ["📊 Financial Bridge", "📈 Amortization", "🧪 Sensitivity Analysis", "📝 Record Management"]
+
+    # 2. Initialize the session state if it doesn't exist
     if 'active_tab' not in st.session_state:
         st.session_state.active_tab = tabs_list[0]
 
-    # Use only ONE radio widget with a unique key
+    # 3. Now call the radio widget using the defined tabs_list
     st.session_state.active_tab = st.radio(
         "Simulation Navigation", 
-        tabs_list, 
+        options=tabs_list, 
         horizontal=True, 
         label_visibility="collapsed", 
-        key=f"nav_bar_unique_{rc}" # Added 'bar_unique' to prevent collisions
+        key=f"nav_bar_final_{rc}" 
     )
-    st.divider()
+    st.divider()  
  
     # 3. TAB CONTENT LOGIC
     if st.session_state.active_tab == "📊 Financial Bridge":
