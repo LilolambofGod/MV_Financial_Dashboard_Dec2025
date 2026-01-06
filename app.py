@@ -1053,6 +1053,10 @@ def show_acquisition():
         loan_term = st.slider("Term (Years)", 1, 25, 1, key=f"fi2b_{rc}")
         transaction_fees = st.number_input("Est. Transaction Fees ($)", value=None, placeholder="e.g. 50000", key=f"fi2c_{rc}")
     
+    # ADD THE FIX HERE (Line 1559 or equivalent)
+    # This prevents the formatting crash when the value is None
+    st.write(f"**Transaction Costs:** ${transaction_fees if transaction_fees is not None else 0:,.0f}")
+
     # --- ENGINE PRE-CALCULATIONS (Safe Math) ---
     # Convert interest rate input to decimal and sanitize
     int_rate_val = (int_rate_input / 100) if int_rate_input is not None else 0.0
