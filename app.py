@@ -1307,17 +1307,74 @@ def show_acquisition():
             st.dataframe(v_df, use_container_width=True)
 
             if not v_df.empty:
-                st.markdown("#### 🛠️ Record Actions")
-                sel_id = st.selectbox("Select Sim_ID for Action", v_df.index)
+                sel_id = st.selectbox("Select Sim_ID for Action", v_df.index, key=f"v_select_{rc}")
                 
+                # Show Historical Notes (Vault Version - Non-Editable)
+                hist_notes = df_hist_master[df_hist_master["Sim_ID"] == sel_id]["Reasons"].values[0]
+                st.info(f"**Historical Rationale for ID {sel_id}:**\n\n{hist_notes}")
+
+                # -------------------------------
                 col_a, col_b = st.columns(2)
                 with col_a:
-                    if st.button("📑 Recover PDF Summary"):
+                    if st.button("📑 Recover PDF Summary", key=f"v_recov_{sel_id}_{rc}"):
+                        # Fetch the specific row as a Series
+                        # .iloc[0] ensures 'r' is a Series (subscriptable), not a float
                         r = df_hist_master[df_hist_master["Sim_ID"] == sel_id].iloc[0]
-                        pdf_ident = {"Target": r["Target"], "Verdict": r["Verdict"], "Reasons": r["Reasons"], "State": r.get("State", "N/A")}
-                        pdf_kpis = {"ROI": r["ROI"], "Leverage": r["Leverage"]}
-                        pdf_b = create_pdf(pdf_ident, pdf_kpis)
-                        st.download_button("📥 Download Recovered PDF", pdf_b, f"Recovered_Sim_{sel_id}.pdf")
+                        s_and_u_hist = {
+                            "sources": [
+                                ("Bank Debt", f"${s_new_debt:,.0f}"),
+                                ("Seller Note", f"${s_seller_note:,.0f}"),
+                                ("Cash Equity", f"${cash_equity_needed:,.0f}"),
+                                ("Total Sources", f"${(s_new_debt + s_seller_note + cash_equity_needed):,.0f}")
+                            ],
+                            "uses": [
+                                ("Purchase Price", f"${purchase_price:,.0f}"),
+                                ("Transaction Fees", f"${s_fees:,.0f}"),
+                                ("Total Uses", f"${(purchase_price + s_fees):,.0f}")
+                            ]
+                        }
+
+                        # Reconstruct Amortization for the PDF Appendix
+                        pdf_amort_hist = []
+                        r_bal_h = s_new_debt
+                        a_pri_h = s_new_debt / loan_term if loan_term > 0 else 0
+                        for y in range(1, loan_term + 1):
+                            i_p_h = r_bal_h * int_rate_val # Use the base interest rate
+                            t_p_h = a_pri_h + i_p_h
+                            r_bal_h -= a_pri_h
+                            pdf_amort_hist.append({
+                                "Year": f"Y{y}", "Principal": a_pri_h, "Interest": i_p_h, 
+                                "Total Payment": t_p_h, "Remaining Balance": max(0, r_bal_h)
+                            })
+
+                        # --- BUILD IDENTICAL PDF ---
+                        pdf_b = create_pdf(
+                            rec={
+                                "Target": r["Target"], 
+                                "Verdict": r["Verdict"], 
+                                "Reasons": r["Reasons"], 
+                                "State": r.get("State", "N/A"), 
+                                "City": r.get("City", "N/A")
+                            },
+                            kpi_data={
+                                "Purchase Price": f"${purchase_price:,.0f}",
+                                "Purchase Multiple": f"{ebitda_mult:.1f}x",
+                                "Closing Leverage": r["Leverage"],
+                                "Year 1 Cash ROI": r["ROI"],
+                                "DSCR (Avg)": f"{deal_dscr:.2f}x"
+                            },
+                            sources_uses=s_and_u_hist,
+                            amort_schedule=pdf_amort_hist
+                        )
+                        
+                        st.download_button(
+                            label="📥 Download Recovered Report",
+                            data=pdf_b,
+                            file_name=f"Recovered_Analysis_{r['Target']}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key=f"dl_v_pdf_{sel_id}"
+                        )
                 
                 with col_b:
                     st.warning(f"Warning: Deleting ID {sel_id} is permanent.")
@@ -1347,24 +1404,28 @@ def show_acquisition():
                             time.sleep(1) # Delay so the user sees the green success message
                             st.rerun()
 
+        # ==========================================
         # 7. FINAL ACTIONS (Bottom of Page)
         st.divider()
         
-        # 1. Capture the input and check status
-        strat_notes = st.text_area("Enter rationale details...", key=f"notes_{rc}")
+        # Initialize button states in session state
+        if "vault_saved" not in st.session_state: st.session_state.vault_saved = False
+        if "pdf_exported" not in st.session_state: st.session_state.pdf_exported = False
+
+        # --- THE SINGLE RATIONALE BOX ---
+        strat_notes = st.text_area("Enter rationale details for this simulation...", key=f"final_notes_{rc}")
         
-        # 2. PERMANENT CONFIRMATION BOX
-        # This block remains visible as long as there is text in the box
         if strat_notes.strip():
-            st.success("✅ **Rationale Captured:** Your notes are synced and will be included in the Vault and PDF Export.")
+            st.success("✅ **Rationale Captured:** Ready for Vault/PDF export.")
         else:
-            st.info("ℹ️ **Status:** Enter strategic rationale above to include it in the final report.")
+            st.info("ℹ️ **Status:** Enter strategic rationale above to include it in the report.")
 
         st.divider()
         b1, b2, b3 = st.columns(3)
         
         with b1:
-            if st.button("📁 Save Simulation to Vault", use_container_width=True):
+            save_label = "✅ Saved to Vault" if st.session_state.vault_saved else "📁 Save Simulation to Record Vault"
+            if st.button(save_label, use_container_width=True, disabled=st.session_state.vault_saved, key=f"save_btn_{rc}"):
                 new_entry = {
                     "Sim_ID": len(df_hist_master)+1, 
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -1378,65 +1439,86 @@ def show_acquisition():
                     "Reasons": strat_notes
                 }
                 pd.concat([df_hist_master, pd.DataFrame([new_entry])]).to_csv(db_file, index=False)
+                st.session_state.vault_saved = True
                 st.success("Analysis archived in vault.")
+                st.rerun()
 
         with b2:
-            # The "Export" button prepares the data
-            if st.button("📄 Export Summary PDF", use_container_width=True):
-                # 1. Prepare Financing Structure
-                s_and_u = {
-                    "sources": [
-                        ("Bank Debt", f"${s_new_debt:,.0f}"),
-                        ("Seller Note", f"${s_seller_note:,.0f}"),
-                        ("Cash Equity", f"${cash_equity_needed:,.0f}"),
-                        ("Total Sources", f"${(s_new_debt + s_seller_note + cash_equity_needed):,.0f}")
-                    ],
-                    "uses": [
-                        ("Purchase Price", f"${purchase_price:,.0f}"),
-                        ("Transaction Fees", f"${s_fees:,.0f}"),
-                        ("Total Uses", f"${(purchase_price + s_fees):,.0f}")
-                    ]
-                }
+            # --- PHASE 1: PDF NOT YET GENERATED ---
+            if not st.session_state.pdf_exported:
+                if st.button("📄 Export Summary PDF", use_container_width=True, key=f"export_trigger_{rc}"):
+                    # 1. Prepare Financing Structure
+                    s_and_u = {
+                        "sources": [
+                            ("Bank Debt", f"${s_new_debt:,.0f}"),
+                            ("Seller Note", f"${s_seller_note:,.0f}"),
+                            ("Cash Equity", f"${cash_equity_needed:,.0f}"),
+                            ("Total Sources", f"${(s_new_debt + s_seller_note + cash_equity_needed):,.0f}")
+                        ],
+                        "uses": [
+                            ("Purchase Price", f"${purchase_price:,.0f}"),
+                            ("Transaction Fees", f"${s_fees:,.0f}"),
+                            ("Total Uses", f"${(purchase_price + s_fees):,.0f}")
+                        ]
+                    }
 
-                # 2. Re-calculate Amortization for PDF
-                pdf_amort = []
-                r_bal = s_new_debt
-                a_pri = s_new_debt / loan_term if loan_term > 0 else 0
-                for y in range(1, loan_term + 1):
-                    i_p = r_bal * calc_int
-                    t_p = a_pri + i_p
-                    r_bal -= a_pri
-                    pdf_amort.append({
-                        "Year": f"Y{y}", "Principal": a_pri, "Interest": i_p, 
-                        "Total Payment": t_p, "Remaining Balance": max(0, r_bal)
-                    })
+                    # 2. Re-calculate Amortization for PDF
+                    pdf_amort = []
+                    r_bal = s_new_debt
+                    a_pri = s_new_debt / loan_term if loan_term > 0 else 0
+                    for y in range(1, loan_term + 1):
+                        i_p = r_bal * calc_int
+                        t_p = a_pri + i_p
+                        r_bal -= a_pri
+                        pdf_amort.append({
+                            "Year": f"Y{y}", "Principal": a_pri, "Interest": i_p, 
+                            "Total Payment": t_p, "Remaining Balance": max(0, r_bal)
+                        })
 
-                # 3. Build PDF
-                pdf_b = create_pdf(
-                    rec={"Target": target_name, "Verdict": verdict, "Reasons": strat_notes, "State": target_state, "City": target_city},
-                    kpi_data={
-                        "Purchase Price": f"${purchase_price:,.0f}",
-                        "Purchase Multiple": f"{ebitda_mult:.1f}x",
-                        "Closing Leverage": f"{total_lev:.2f}x",
-                        "Year 1 Cash ROI": f"{cash_roi:.1f}%",
-                        "DSCR (Avg)": f"{deal_dscr:.2f}x"
-                    },
-                    sources_uses=s_and_u,
-                    amort_schedule=pdf_amort
-                )
+                    # 3. Build PDF
+                    pdf_b = create_pdf(
+                        rec={"Target": target_name, "Verdict": verdict, "Reasons": strat_notes, "State": target_state, "City": target_city},
+                        kpi_data={
+                            "Purchase Price": f"${purchase_price:,.0f}",
+                            "Purchase Multiple": f"{ebitda_mult:.1f}x",
+                            "Closing Leverage": f"{total_lev:.2f}x",
+                            "Year 1 Cash ROI": f"{cash_roi:.1f}%",
+                            "DSCR (Avg)": f"{deal_dscr:.2f}x"
+                        },
+                        sources_uses=s_and_u,
+                        amort_schedule=pdf_amort
+                    )
+                    
+                    # 4. Save to state and trigger refresh
+                    st.session_state.pdf_exported = True
+                    st.session_state.temp_pdf = pdf_b 
+                    st.rerun()
+            
+            # --- PHASE 2: PDF GENERATED -> SHOW GREYED OUT + DOWNLOAD ---
+            else:
+                # This button is just a visual label to show it is deactivated
+                st.button("✅ PDF Generated", use_container_width=True, disabled=True, key=f"exported_grey_{rc}")
                 
-                # 4. Show the Download button immediately below within the same column
+                # This is the actual functional button
                 st.download_button(
                     label="⬇️ Click to Download Report",
-                    data=pdf_b,
+                    data=st.session_state.temp_pdf,
                     file_name=f"Analysis_{target_name}.pdf",
                     mime="application/pdf",
-                    use_container_width=True
+                    use_container_width=True,
+                    key=f"dl_final_{rc}"
                 )
+                
 
         with b3:
-            if st.button("🔄 Clear & Restart Simulation", use_container_width=True):
+            if st.button("🔄 Clear & Restart Simulation", use_container_width=True, key=f"restart_btn_{rc}"):
                 st.session_state.reset_counter += 1
+                st.session_state.vault_saved = False
+                st.session_state.pdf_exported = False
+                # Clear temporary PDF storage
+                if "temp_pdf" in st.session_state:
+                    del st.session_state.temp_pdf
+                # Clear run flag
                 for k in list(st.session_state.keys()):
                     if "run_sim" in k: del st.session_state[k]
                 st.rerun()
