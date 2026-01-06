@@ -37,21 +37,44 @@ def create_pdf(rec, kpi_data, sources_uses=None, amort_schedule=None):
     pdf.cell(0, 8, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='R')
     pdf.ln(2)
 
-    # --- 1. IDENTITY & LOCATION ---
+    # --- 1. IDENTITY & LOCATION SECTION ---
     pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
     pdf.cell(0, 8, " 1. Target Identity & Location", ln=True, fill=True)
     pdf.set_font("Arial", '', 10); pdf.ln(2)
+    
+    # Target and Location Info
     pdf.cell(95, 7, f"Target Name: {str(rec.get('Target', 'N/A'))}")
     pdf.cell(95, 7, f"Location: {str(rec.get('City', 'N/A'))}, {str(rec.get('State', 'N/A'))}", ln=True)
+    pdf.ln(2)
+
+    # --- THE VERDICT BANNER BOX ---
+    verdict_str = str(rec.get('Verdict', 'N/A')).upper()
     
-    verdict = str(rec.get('Verdict', 'N/A')).upper()
-    if "PASS" in verdict: pdf.set_text_color(39, 174, 96)
-    elif "CAUTION" in verdict: pdf.set_text_color(241, 196, 15)
-    else: pdf.set_text_color(231, 76, 60)
-    pdf.set_font("Arial", 'B', 10); pdf.cell(0, 7, f"Final Verdict: {verdict}", ln=True)
-    pdf.set_text_color(0, 0, 0); pdf.ln(4)
+    # Set Fill and Text Colors based on Verdict
+    if "PASS" in verdict_str:
+        pdf.set_fill_color(39, 174, 96)  # Green
+        pdf.set_text_color(255, 255, 255) # White text
+    elif "CAUTION" in verdict_str:
+        pdf.set_fill_color(241, 196, 15) # Yellow/Amber
+        pdf.set_text_color(0, 0, 0)       # Black text (better for yellow)
+    elif "FAIL" in verdict_str:
+        pdf.set_fill_color(231, 76, 60)  # Red
+        pdf.set_text_color(255, 255, 255) # White text
+    else:
+        pdf.set_fill_color(200, 200, 200) # Grey
+        pdf.set_text_color(0, 0, 0)
+
+    pdf.set_font("Arial", 'B', 12)
+    # This creates a full-width box (0) with the background fill (fill=True)
+    pdf.cell(0, 10, f" VERDICT: {verdict_str}", ln=True, align='C', fill=True)
+    
+    # --- IMPORTANT: RESET COLORS IMMEDIATELY ---
+    pdf.set_text_color(0, 0, 0)      # Reset text to Black
+    pdf.set_draw_color(0, 0, 0)      # Reset line colors
+    pdf.ln(4)
 
     # --- 2. PERFORMANCE KPIs ---
+    # Now that color is reset, these will be black
     pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
     pdf.cell(0, 8, " 2. Key Performance Indicators (Year 1)", ln=True, fill=True)
     pdf.set_font("Arial", '', 9); pdf.ln(2)
@@ -947,7 +970,7 @@ def show_acquisition():
     debt_pct = 0.0
     seller_pct = 0.0
     int_rate_input = None
-    loan_term = 1
+    loan_term = None
     transaction_fees = None
     
     target_max_lev_hurdle = None
@@ -1033,8 +1056,13 @@ def show_acquisition():
         debt_pct = st.slider("Bank Loan (%)", 0, 100, 0, key=f"fi1a_{rc}") / 100
         seller_pct = st.slider("Seller Note (%)", 0, 100, 0, key=f"fi1b_{rc}") / 100
     with fi2:
+        # Use value=None for the number input
         int_rate_input = st.number_input("Interest Rate (%)", value=None, key=f"fi2a_{rc}")
-        loan_term = st.slider("Term (Years)", 1, 25, 1, key=f"fi2b_{rc}")
+        
+        # For the slider, start it at a value you define as "unselected" 
+        # Or better: keep it as a number_input for the term to allow a None state
+        loan_term = st.number_input("Term (Years)", value=None, step=1, key=f"fi2b_{rc}")
+        
         transaction_fees = st.number_input("Est. Transaction Fees ($)", value=None, key=f"fi2c_{rc}")
 
     # Sanitized Math
@@ -1054,10 +1082,13 @@ def show_acquisition():
         "Mandates": all(v is not None for v in [target_max_lev_hurdle, target_min_ebitda_hurdle, target_max_price_hurdle]),
         "Target": target_name != "" and target_state != "",
         "Financials": s_t_ebitda > 0 and ebitda_mult > 0,
-        "Financing": int_rate_input is not None and debt_pct > 0
+        "Financing Structure": (debt_pct > 0 or seller_pct > 0),
+        "Loan Terms": loan_term is not None,  # Will be False if initialized to None
+        "Interest Rate": int_rate_input is not None,
+        "Closing Costs": transaction_fees is not None
     }
     progress_pct = sum(checklist.values()) / len(checklist)
-    bar_color = "#FF4B4B" if progress_pct < 0.4 else "#FFA500" if progress_pct < 0.8 else "#27AE60"
+    bar_color = "#FF4B4B" if progress_pct < 0.4 else "#FFA500" if progress_pct < 1 else "#27AE60"
 
     st.markdown(f"""
         <div style="width: 100%; background-color: #f0f2f6; border-radius: 10px; margin: 20px 0;">
@@ -1091,6 +1122,9 @@ def show_acquisition():
             stress_retention_drop = c_s1.number_input("Retention Shock (% Drop)", 0.0, 100.0, 10.0) / 100
             stress_rate_jump = c_s2.number_input("Interest Rate Shock (bps)", 0.0, 1000.0, 200.0) / 10000
             apply_stress = st.toggle("🚨 Apply Stress Test")
+            
+            if apply_stress:
+                st.warning("⚠️ **Note:** Stress test results are for simulation only. Saving to the Record Vault will archive the **Base Case** (pre-shock) financials.")
 
         # Engine Math
         calc_ret = retention_rate - (stress_retention_drop if apply_stress else 0)
@@ -1110,14 +1144,43 @@ def show_acquisition():
         pf_margin = (consolidated_ebitda / pf_rev * 100) if pf_rev > 0 else 0
 
         # Verdict
+        # Define Buffers for Caution (e.g., within 10% of a hurdle)
+        dscr_buffer = (target_min_dscr_hurdle or 1.2) * 1.10
+        lev_buffer = (target_max_lev_hurdle or 4.0) * 0.90
+
         fail_reasons = []
+        caution_reasons = []
+
+        # -- FAIL LOGIC --
         if total_lev > (target_max_lev_hurdle or 10): fail_reasons.append("Leverage Limit")
         if deal_dscr < (target_min_dscr_hurdle or 0): fail_reasons.append("DSCR Floor")
         if (cash_roi/100) < target_min_roi_hurdle: fail_reasons.append("ROI Goal")
-        if check_accretion and pf_margin < mv_margin_base: fail_reasons.append("Margin Dilution")
 
-        verdict, v_color = ("FAIL: DE-PRIORITIZE", "#e74c3c") if fail_reasons else ("PASS: STRATEGIC FIT", "#27ae60")
-        st.markdown(f"<div style='background-color:{v_color}; padding:20px; border-radius:10px; text-align:center; color:white;'><h2>{verdict}</h2><p>{' | '.join(fail_reasons) if fail_reasons else 'Investment Mandates Cleared'}</p></div>", unsafe_allow_html=True)
+        # -- CAUTION LOGIC (Only check if not already failed) --
+        if not fail_reasons:
+            if total_lev > lev_buffer: caution_reasons.append("High Leverage (Near Limit)")
+            if deal_dscr < dscr_buffer: caution_reasons.append("Tight Debt Coverage")
+            if apply_stress: caution_reasons.append("Stressed Scenario Active")
+
+        # Determine Final Verdict
+        if fail_reasons:
+            verdict, v_color = "FAIL: DE-PRIORITIZE", "#e74c3c" # Red
+            sub_text = " | ".join(fail_reasons)
+        elif caution_reasons:
+            verdict, v_color = "CAUTION: PROCEED WITH CARE", "#f1c40f" # Yellow/Amber
+            sub_text = " | ".join(caution_reasons)
+        else:
+            verdict, v_color = "PASS: STRATEGIC FIT", "#27ae60" # Green
+            sub_text = "Investment Mandates Cleared"
+        
+        # Render Verdict Banner
+        text_color = "white" if v_color != "#f1c40f" else "black"
+        st.markdown(f"""
+            <div style='background-color:{v_color}; padding:20px; border-radius:10px; text-align:center; color:{text_color};'>
+                <h2 style='margin:0;'>{verdict}</h2>
+                <p style='margin:5px 0 0 0; font-weight:bold;'>{sub_text}</p>
+            </div>
+        """, unsafe_allow_html=True)
 
         # 8-GRID KPI
         k1, k2, k3, k4 = st.columns(4)
@@ -1426,6 +1489,19 @@ def show_acquisition():
         with b1:
             save_label = "✅ Saved to Vault" if st.session_state.vault_saved else "📁 Save Simulation to Record Vault"
             if st.button(save_label, use_container_width=True, disabled=st.session_state.vault_saved, key=f"save_btn_{rc}"):
+                
+                # --- BACKGROUND BASE CASE CALCULATION ---
+                # We ignore apply_stress and use the original variables
+                base_adj_ebitda = s_t_ebitda * retention_rate
+                base_synergy = base_adj_ebitda * synergy_pct
+                base_growth = (mv_ebitda_base + base_adj_ebitda) * organic_growth
+                base_cons_ebitda = (mv_ebitda_base + base_adj_ebitda) + base_synergy + base_growth
+                
+                base_ann_debt_svc = (s_new_debt / loan_term) + (s_new_debt * int_rate_val)
+                base_fcf = (base_cons_ebitda * fcf_conv) - base_ann_debt_svc
+                base_roi = (base_fcf / (cash_equity_needed if cash_equity_needed > 0 else 1)) * 100
+                base_lev = (s_new_debt + s_seller_note + 1500000) / (base_cons_ebitda if base_cons_ebitda > 0 else 1)
+
                 new_entry = {
                     "Sim_ID": len(df_hist_master)+1, 
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -1433,14 +1509,15 @@ def show_acquisition():
                     "Target": target_name, 
                     "State": target_state, 
                     "City": target_city,
-                    "Verdict": verdict, 
-                    "ROI": f"{cash_roi:.1f}%", 
-                    "Leverage": f"{total_lev:.2f}x", 
-                    "Reasons": strat_notes
+                    "Verdict": verdict, # Keeps the verdict based on current screen view
+                    "ROI": f"{base_roi:.1f}%", 
+                    "Leverage": f"{base_lev:.2f}x", 
+                    "Reasons": f"[BASE CASE] {strat_notes}"
                 }
+                
                 pd.concat([df_hist_master, pd.DataFrame([new_entry])]).to_csv(db_file, index=False)
                 st.session_state.vault_saved = True
-                st.success("Analysis archived in vault.")
+                st.success("Analysis archived as BASE CASE.")
                 st.rerun()
 
         with b2:
