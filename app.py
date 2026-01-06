@@ -1313,14 +1313,21 @@ def show_acquisition():
                           delta=f"{ebitda_mult - (s_h_mult or 0):.1f} vs Limit", delta_color="inverse")
 
         # 5. FIXED: None-safe formatting for Transaction Costs
-        st.write(f"**Transaction Costs:** ${transaction_fees if transaction_fees is not None else 0:,.0f}")
+            st.write(f"**Transaction Costs:** ${transaction_fees if transaction_fees is not None else 0:,.0f}")
+        # 1. Executive Deal Memo Summary
+            st.markdown("### 📝 Executive Deal Memo Summary")
+        # (Your logic for generating the memo text goes here)
 
         # --- 6. TABS NAVIGATION (Gated and Aligned) ---
         st.divider()
         tabs_list = ["📊 Financial Bridge", "📈 Amortization", "🧪 Sensitivity Analysis", "📝 Record Management"]
 
-        if 'active_tab' not in st.session_state:
-            st.session_state.active_tab = tabs_list[0]
+        # Radio navigation for tabs
+        st.session_state.active_tab = st.radio("Nav", tabs_list, horizontal=True, key=f"nav_final_{rc}")
+
+        # VAULT INFO: Only shows inside the active gate
+        if 'acquisition_records' not in st.session_state or not st.session_state.acquisition_records:
+            st.info("ℹ️ No records found in the acquisition vault. Save a deal to start your archive.")
 
         st.session_state.active_tab = st.radio(
             "Simulation Navigation", 
@@ -1374,79 +1381,79 @@ def show_acquisition():
         
         # --- FIXED ALIGNMENT BLOCK ---
         # Ensure these lines match the indentation of the 'st.markdown' above
-        c1, c2 = st.columns([3, 1])
+            c1, c2 = st.columns([3, 1])
         
-        with c2:
-            st.info("💡 ROI Sensitivity: This heatmap visualizes how Year 1 Cash ROI changes relative to Purchase Multiple and Interest Rate shifts.")
+            with c2:
+                st.info("💡 ROI Sensitivity: This heatmap visualizes how Year 1 Cash ROI changes relative to Purchase Multiple and Interest Rate shifts.")
 
-        with c1:
+            with c1:
             # Logic for generating a sensitivity matrix
-            multiples = [ebitda_mult * (1 + x) for x in [-0.2, -0.1, 0, 0.1, 0.2]]
-            rates = [int_rate_val * (1 + x) for x in [-0.2, -0.1, 0, 0.1, 0.2]]
+                multiples = [ebitda_mult * (1 + x) for x in [-0.2, -0.1, 0, 0.1, 0.2]]
+                rates = [int_rate_val * (1 + x) for x in [-0.2, -0.1, 0, 0.1, 0.2]]
             
             # Sensitivity calculation loop
-            sens_data = []
-            for m in multiples:
-                row = []
-                for r in rates:
+                sens_data = []
+                for m in multiples:
+                    row = []
+                    for r in rates:
                     # Calculate theoretical ROI based on variable shifts
-                    temp_price = s_t_ebitda * m
-                    temp_debt = temp_price * debt_pct
-                    temp_interest = temp_debt * r
-                    temp_fcf = (s_t_ebitda * fcf_conv) - temp_interest
-                    temp_equity = (temp_price + s_fees) - (temp_debt + (temp_price * seller_pct))
-                    temp_roi = (temp_fcf / temp_equity * 100) if temp_equity > 0 else 0
-                    row.append(temp_roi)
-                sens_data.append(row)
+                        temp_price = s_t_ebitda * m
+                        temp_debt = temp_price * debt_pct
+                        temp_interest = temp_debt * r
+                        temp_fcf = (s_t_ebitda * fcf_conv) - temp_interest
+                        temp_equity = (temp_price + s_fees) - (temp_debt + (temp_price * seller_pct))
+                        temp_roi = (temp_fcf / temp_equity * 100) if temp_equity > 0 else 0
+                        row.append(temp_roi)
+                    sens_data.append(row)
 
             # Display as a formatted dataframe heatmap
-            df_sens = pd.DataFrame(
-                sens_data, 
-                index=[f"{m:.1f}x" for m in multiples], 
-                columns=[f"{r*100:.1f}%" for r in rates]
-            )
-            st.write("Vertical: Purchase Multiple | Horizontal: Interest Rate")
-            st.dataframe(df_sens.style.background_gradient(cmap='RdYlGn').format("{:.1f}%"))
+                df_sens = pd.DataFrame(
+                    sens_data, 
+                    index=[f"{m:.1f}x" for m in multiples], 
+                    columns=[f"{r*100:.1f}%" for r in rates]
+                )
+                st.write("Vertical: Purchase Multiple | Horizontal: Interest Rate")
+                st.dataframe(df_sens.style.background_gradient(cmap='RdYlGn').format("{:.1f}%"))
 
-        st.divider()
-        st.markdown("#### 2. Leverage Sensitivity (Lender Risk Analysis)")
-        l1, l2 = st.columns([3, 1])
-        with l1:
-            def calc_lev_sens(m, d_p):
-                debt_amt = (t_ebitda * m) * d_p
-                return round((debt_amt + 1500000) / (consolidated_ebitda if consolidated_ebitda != 0 else 1), 2)
+            st.divider()
+            st.markdown("#### 2. Leverage Sensitivity (Lender Risk Analysis)")
+            l1, l2 = st.columns([3, 1])
+            with l1:
+                def calc_lev_sens(m, d_p):
+                    debt_amt = (t_ebitda * m) * d_p
+                    return round((debt_amt + 1500000) / (consolidated_ebitda if consolidated_ebitda != 0 else 1), 2)
             
-            m_rng_lev = [ebitda_mult + i for i in [1, 0.5, 0, -0.5, -1]]
-            d_pct_rng = [debt_pct + i for i in [-0.2, -0.1, 0, 0.1, 0.2]]
-            sens_lev = pd.DataFrame([[calc_lev_sens(m, d) for d in d_pct_rng] for m in m_rng_lev], 
+                m_rng_lev = [ebitda_mult + i for i in [1, 0.5, 0, -0.5, -1]]
+                d_pct_rng = [debt_pct + i for i in [-0.2, -0.1, 0, 0.1, 0.2]]
+                sens_lev = pd.DataFrame([[calc_lev_sens(m, d) for d in d_pct_rng] for m in m_rng_lev], 
                                 index=[f"{m:.1f}x" for m in m_rng_lev], 
                                 columns=[f"{int(d*100)}%" for d in d_pct_rng])
             
-            fig_lev = px.imshow(sens_lev, text_auto=True, color_continuous_scale="Reds", 
+                fig_lev = px.imshow(sens_lev, text_auto=True, color_continuous_scale="Reds", 
                             color_continuous_midpoint=target_max_lev_hurdle, title="Total Leverage vs. Debt % and Multiples")
-            fig_lev.update_layout(xaxis_title="Bank Debt %", yaxis_title="Multiple (x)")
-            st.plotly_chart(fig_lev, use_container_width=True)
-        with l2:
-            st.warning(f"**Lender Risk:** Max Leverage Hurdle: {target_max_lev_hurdle}x.")
+                fig_lev.update_layout(xaxis_title="Bank Debt %", yaxis_title="Multiple (x)")
+                st.plotly_chart(fig_lev, use_container_width=True)
+            with l2:
+                st.warning(f"**Lender Risk:** Max Leverage Hurdle: {target_max_lev_hurdle}x.")
 
-        st.divider()
-        st.subheader("💡 Strategic Recommendation")
-        if cash_roi >= roi_input_val and total_leverage <= target_max_lev_hurdle:
-            st.success("The current structure is **Optimized**. Maximizes leverage while exceeding ROI goals.")
-        elif total_leverage > target_max_lev_hurdle:
-            st.error(f"**Action Required:** Deal is over-leveraged. Reduce Bank Debt or Multiple.")
-        else:
-            st.info("**Optimization Opportunity:** Additional 'Debt Capacity' exists. Could increase Bank Debt to preserve cash.")
+            st.divider()
+            st.subheader("💡 Strategic Recommendation")
+            if cash_roi >= roi_input_val and total_leverage <= target_max_lev_hurdle:
+                st.success("The current structure is **Optimized**. Maximizes leverage while exceeding ROI goals.")
+            elif total_leverage > target_max_lev_hurdle:
+                st.error(f"**Action Required:** Deal is over-leveraged. Reduce Bank Debt or Multiple.")
+            else:
+                st.info("**Optimization Opportunity:** Additional 'Debt Capacity' exists. Could increase Bank Debt to preserve cash.")
 
-        st.divider()
-        st.subheader("🏦 Debt Capacity & Margin of Safety")
-        max_debt_allowed = (consolidated_ebitda * target_max_lev_hurdle) - 1500000
-        current_new_debt = s_new_debt + s_seller_note
-        remaining_capacity = max_debt_allowed - current_new_debt
+            st.divider()
+            st.subheader("🏦 Debt Capacity & Margin of Safety")
+            max_debt_allowed = (consolidated_ebitda * target_max_lev_hurdle) - 1500000
+            current_new_debt = s_new_debt + s_seller_note
+            remaining_capacity = max_debt_allowed - current_new_debt
         
-        cap_c1, cap_c2 = st.columns([2, 1])
-        with cap_c1:
-            fig_cap = go.Figure(go.Indicator(
+            cap_c1, cap_c2 = st.columns([2, 1])
+            with cap_c1:
+                fig_cap = go.Figure(go.Indicator(
                     mode = "gauge+number+delta", value = current_new_debt,
                     title = {'text': "Used vs. Max Debt Capacity ($)", 'font': {'size': 18}},
                     delta = {'reference': max_debt_allowed, 'increasing': {'color': "red"}, 'decreasing': {'color': "green"}},
@@ -1457,117 +1464,135 @@ def show_acquisition():
                     }
                 ))
                 # Update layout and display the figure
-            fig_cap.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20))
-            st.plotly_chart(fig_cap, use_container_width=True)
+                fig_cap.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20))
+                st.plotly_chart(fig_cap, use_container_width=True)
 
-        with cap_c2:
-            st.markdown("#### Capital Observations")
-            if remaining_capacity > 0:
-                st.write(f"✅ **Dry Powder:** ${remaining_capacity:,.0f} available.")
-            else:
-                st.write(f"🚨 **Over-Leveraged:** ${abs(remaining_capacity):,.0f} over limit.")
+            with cap_c2:
+                st.markdown("#### Capital Observations")
+                if remaining_capacity > 0:
+                    st.write(f"✅ **Dry Powder:** ${remaining_capacity:,.0f} available.")
+                else:
+                    st.write(f"🚨 **Over-Leveraged:** ${abs(remaining_capacity):,.0f} over limit.")
 
-    elif st.session_state.active_tab == "📝 Record Management":
+            elif st.session_state.active_tab == "📝 Record Management":
+        # Check if master dataframe exists and is not empty
         if not df_hist_master.empty:
             # --- 1. SEARCH & FILTER SECTION ---
             with st.form("vault_search_form"):
                 f1, f2, f3 = st.columns(3)
+                
                 with f1: 
-                    v_filt = st.multiselect("Verdict", options=df_hist_master["Verdict"].unique(), default=list(df_hist_master["Verdict"].unique()))
+                    v_filt = st.multiselect("Verdict", 
+                                            options=df_hist_master["Verdict"].unique(), 
+                                            default=list(df_hist_master["Verdict"].unique()))
                 with f2: 
                     t_filt = st.text_input("Target Search")
                     city_filt = st.text_input("City Search")
+                    
                 with f3: 
-                    d_range = st.date_input("Date Range", value=(df_hist_master["Timestamp_DT"].min().date(), date.today()))
+                    # Ensure 'date' is imported at the top of your file
+                    d_range = st.date_input("Date Range", 
+                                            value=(df_hist_master["Timestamp_DT"].min().date(), date.today()))
                 
+                # The submit button must be inside the 'with st.form' block
                 if st.form_submit_button("🔍 Run Search"):
                     mask = (df_hist_master["Verdict"].isin(v_filt))
-                    if t_filt: mask = mask & (df_hist_master["Target"].str.contains(t_filt, case=False))
-                    if city_filt: mask = mask & (df_hist_master["City"].str.contains(city_filt, case=False))
+                    if t_filt: 
+                        mask = mask & (df_hist_master["Target"].str.contains(t_filt, case=False))
+                    if city_filt: 
+                        mask = mask & (df_hist_master["City"].str.contains(city_filt, case=False))
                     st.session_state.filtered_vault = df_hist_master[mask]
 
+            # --- 2. DISPLAY SECTION ---
+            # Retrieve filtered data or show full master list
             display_df = st.session_state.get("filtered_vault", df_hist_master)
-            st.dataframe(display_df.drop(columns=["ROI_num", "Lev_num", "Timestamp_DT"], errors='ignore').set_index("Sim_ID"), use_container_width=True)
-
+            
+            st.dataframe(
+                display_df.drop(columns=["ROI_num", "Lev_num", "Timestamp_DT"], errors='ignore').set_index("Sim_ID"), 
+                use_container_width=True
+            )
             st.divider()
-            
+        else:
+            # This shows inside the active simulation gate if no history exists
+            st.info("ℹ️ No records found in the acquisition vault. Click 'Save Base Case' to archive this deal.")
+
     # --- 2. RECOVERY & DELETION ACTIONS ---
-        c1, c2 = st.columns(2)
+            c1, c2 = st.columns(2)
             
-        with c1:
-            st.markdown("### 📄 Recover Historical Memo")
-            sel_rec_recov = st.selectbox("Select Record to Recover:", 
+            with c1:
+                st.markdown("### 📄 Recover Historical Memo")
+                sel_rec_recov = st.selectbox("Select Record to Recover:", 
                                         options=display_df.apply(lambda x: f"ID: {x['Sim_ID']} | {x['Target']}", axis=1), 
                                         key=f"recovery_sel_{rc}")
                 
-            if st.button("📑 Generate Updated PDF Structure"):
-                sid = int(sel_rec_recov.split("|")[0].replace("ID: ", "").strip())
-                row = df_hist_master[df_hist_master["Sim_ID"] == sid].iloc[0]
+                if st.button("📑 Generate Updated PDF Structure"):
+                    sid = int(sel_rec_recov.split("|")[0].replace("ID: ", "").strip())
+                    row = df_hist_master[df_hist_master["Sim_ID"] == sid].iloc[0]
                     
-                try:
+                    try:
                     # Map historical CSV columns to the IDENTITY record (Target info)
-                    hist_ident = {
-                        "Target": str(row["Target"]), 
-                        "Simulator": str(row["Simulator"]), 
-                        "State": str(row["State"]), 
-                        "Verdict": str(row["Verdict"]),
-                        "Reasons": str(row["Reasons"]) # Rationale/Audit Trail
-                    }
+                        hist_ident = {
+                            "Target": str(row["Target"]), 
+                            "Simulator": str(row["Simulator"]), 
+                            "State": str(row["State"]), 
+                            "Verdict": str(row["Verdict"]),
+                            "Reasons": str(row["Reasons"]) # Rationale/Audit Trail
+                        }
                         
                     # Re-construct the KPI Table dictionary for the PDF engine
-                    hist_kpis = {
-                        "Cash ROI": str(row["ROI"]),
-                        "Leverage (Debt/EBITDA)": str(row["Leverage"]),
-                        "City": str(row.get("City", "N/A")),
-                        "Timestamp": str(row["Timestamp"])
-                    }
+                        hist_kpis = {
+                            "Cash ROI": str(row["ROI"]),
+                            "Leverage (Debt/EBITDA)": str(row["Leverage"]),
+                            "City": str(row.get("City", "N/A")),
+                            "Timestamp": str(row["Timestamp"])
+                        }
                         
                     # Call the latest PDF engine with synced data
-                    pdf_bytes = create_pdf(hist_ident, hist_kpis)
+                        pdf_bytes = create_pdf(hist_ident, hist_kpis)
                         
-                    st.download_button(
-                        label="📥 Download Recovered PDF",
-                        data=pdf_bytes,
-                        file_name=f"Historical_Memo_{row['Target'].replace(' ', '_')}.pdf",
-                        mime="application/pdf",
-                        key=f"dl_hist_{sid}"
-                    )
-                except Exception as e: 
-                    st.error(f"Error mapping historical data to PDF: {e}")
+                        st.download_button(
+                            label="📥 Download Recovered PDF",
+                            data=pdf_bytes,
+                            file_name=f"Historical_Memo_{row['Target'].replace(' ', '_')}.pdf",
+                            mime="application/pdf",
+                            key=f"dl_hist_{sid}"
+                        )
+                    except Exception as e: 
+                        st.error(f"Error mapping historical data to PDF: {e}")
 
-        with c2:
-            st.markdown("### 🗑️ Data Housekeeping")
-            sel_rec_del = st.selectbox("Select Record to Permanent Delete:", 
+            with c2:
+                st.markdown("### 🗑️ Data Housekeeping")
+                sel_rec_del = st.selectbox("Select Record to Permanent Delete:", 
                                         options=display_df.apply(lambda x: f"ID: {x['Sim_ID']} | {x['Target']}", axis=1), 
                                         key=f"delete_sel_{rc}")
                 
-            if st.button("❌ Delete Selected Record", type="secondary"):
-                sid_del = int(sel_rec_del.split("|")[0].replace("ID: ", "").strip())
+                if st.button("❌ Delete Selected Record", type="secondary"):
+                    sid_del = int(sel_rec_del.split("|")[0].replace("ID: ", "").strip())
                 # Update the master dataframe and save to CSV
-                df_updated = df_hist_master[df_hist_master["Sim_ID"] != sid_del]
-                df_updated.to_csv(db_file, index=False)
-                st.warning(f"Record ID {sid_del} has been deleted.")
-                st.rerun()
-    else:
-        st.info("No records found in the acquisition vault.")
+                    df_updated = df_hist_master[df_hist_master["Sim_ID"] != sid_del]
+                    df_updated.to_csv(db_file, index=False)
+                    st.warning(f"Record ID {sid_del} has been deleted.")
+                    st.rerun()
+        else:
+            st.info("No records found in the acquisition vault.")
 
     # --- FINAL EXECUTIVE WRAPPER (Indented under if sim_is_active) ---
-    st.markdown("---")
-    with st.expander("📝 View Executive Deal Memo Summary", expanded=False):
-        memo_c1, memo_c2 = st.columns(2)
-        with memo_c1:
-            st.write(f"**Target:** {target_name} ({target_state})")
-            st.write(f"**Enterprise Value:** ${purchase_price:,.0f} ({ebitda_mult}x)")
-            st.write(f"**Transaction Costs:** ${transaction_fees:,.0f}")
-        with memo_c2:
+        st.markdown("---")
+        with st.expander("📝 View Executive Deal Memo Summary", expanded=False):
+            memo_c1, memo_c2 = st.columns(2)
+            with memo_c1:
+                st.write(f"**Target:** {target_name} ({target_state})")
+                st.write(f"**Enterprise Value:** ${purchase_price:,.0f} ({ebitda_mult}x)")
+                st.write(f"**Transaction Costs:** ${transaction_fees:,.0f}")
+            with memo_c2:
             # These values display current UI state (reflects stress if toggled)
-            st.write(f"**Pro-Forma EBITDA:** ${consolidated_ebitda:,.0f}")
-            st.write(f"**Year 1 Cash ROI:** {cash_roi:.1f}%")
-            st.write(f"**Closing Leverage:** {total_leverage:.2f}x")
-        st.info(f"**Final Verdict:** {verdict}")
+                st.write(f"**Pro-Forma EBITDA:** ${consolidated_ebitda:,.0f}")
+                st.write(f"**Year 1 Cash ROI:** {cash_roi:.1f}%")
+                st.write(f"**Closing Leverage:** {total_leverage:.2f}x")
+            st.info(f"**Final Verdict:** {verdict}")
 
-    st.divider()
-    st.markdown("### 📑 Finalize Deal Memo & Database Entry")
+        st.divider()
+        st.markdown("### 📑 Finalize Deal Memo & Database Entry")
         
     # Audit Warning: Ensures user knows what is being saved
     if apply_stress:
