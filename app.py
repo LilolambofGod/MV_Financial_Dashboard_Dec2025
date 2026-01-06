@@ -26,8 +26,7 @@ def create_pdf(rec, kpi_data, sources_uses=None, amort_schedule=None):
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # --- PAGE 1: EXECUTIVE SUMMARY ---
-    # (Header, Section 1: Identity, Section 2: KPIs, Section 3: Sources & Uses as previously built)
+    # --- HEADER ---
     pdf.set_fill_color(31, 73, 125) 
     pdf.set_text_color(255, 255, 255) 
     pdf.set_font("Arial", 'B', 16)
@@ -38,12 +37,12 @@ def create_pdf(rec, kpi_data, sources_uses=None, amort_schedule=None):
     pdf.cell(0, 8, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='R')
     pdf.ln(2)
 
-    # 1. Identity & Verdict
+    # --- 1. IDENTITY & LOCATION ---
     pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
-    pdf.cell(0, 8, " 1. Target Identity & Verdict", ln=True, fill=True)
+    pdf.cell(0, 8, " 1. Target Identity & Location", ln=True, fill=True)
     pdf.set_font("Arial", '', 10); pdf.ln(2)
     pdf.cell(95, 7, f"Target Name: {str(rec.get('Target', 'N/A'))}")
-    pdf.cell(95, 7, f"Location: {str(rec.get('State', 'N/A'))}", ln=True)
+    pdf.cell(95, 7, f"Location: {str(rec.get('City', 'N/A'))}, {str(rec.get('State', 'N/A'))}", ln=True)
     
     verdict = str(rec.get('Verdict', 'N/A')).upper()
     if "PASS" in verdict: pdf.set_text_color(39, 174, 96)
@@ -52,18 +51,18 @@ def create_pdf(rec, kpi_data, sources_uses=None, amort_schedule=None):
     pdf.set_font("Arial", 'B', 10); pdf.cell(0, 7, f"Final Verdict: {verdict}", ln=True)
     pdf.set_text_color(0, 0, 0); pdf.ln(4)
 
-    # 2. Performance KPIs
+    # --- 2. PERFORMANCE KPIs ---
     pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
-    pdf.cell(0, 8, " 2. Key Performance Indicators", ln=True, fill=True)
+    pdf.cell(0, 8, " 2. Key Performance Indicators (Year 1)", ln=True, fill=True)
     pdf.set_font("Arial", '', 9); pdf.ln(2)
     for label, value in kpi_data.items():
         pdf.cell(110, 7, f" {str(label)}", border=1); pdf.cell(80, 7, f" {str(value)}", border=1, ln=True, align='C')
-    pdf.ln(6)
+    pdf.ln(4)
 
-    # 3. Sources & Uses
+    # --- 3. SOURCES & USES (Financing Structure) ---
     if sources_uses:
         pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
-        pdf.cell(0, 8, " 3. Sources & Uses of Funds", ln=True, fill=True); pdf.ln(2)
+        pdf.cell(0, 8, " 3. Deal Financing Structure (Sources & Uses)", ln=True, fill=True); pdf.ln(2)
         pdf.set_font("Arial", 'B', 9); pdf.set_fill_color(220, 220, 220)
         pdf.cell(45, 7, "Sources", 1, 0, 'C', 1); pdf.cell(50, 7, "Amount", 1, 0, 'C', 1)
         pdf.cell(45, 7, "Uses", 1, 0, 'C', 1); pdf.cell(50, 7, "Amount", 1, 1, 'C', 1)
@@ -76,9 +75,9 @@ def create_pdf(rec, kpi_data, sources_uses=None, amort_schedule=None):
             pdf.cell(45, 6, f" {u_l}", 1); pdf.cell(50, 6, f" {u_v}", 1, 1, 'R')
         pdf.ln(6)
 
-    # 4. Strategic Summary
+    # --- 4. STRATEGIC SUMMARY ---
     pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
-    pdf.cell(0, 8, " 4. Executive Strategic Summary", ln=True, fill=True)
+    pdf.cell(0, 8, " 4. Executive Strategic Rationale", ln=True, fill=True)
     pdf.ln(2); pdf.set_font("Arial", '', 9)
     reasoning = str(rec.get('Reasons', 'No notes provided.')).encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 5, reasoning)
@@ -86,23 +85,19 @@ def create_pdf(rec, kpi_data, sources_uses=None, amort_schedule=None):
     # --- PAGE 2: AMORTIZATION SCHEDULE ---
     if amort_schedule:
         pdf.add_page()
-        pdf.set_font("Arial", 'B', 14)
-        pdf.cell(0, 10, "Appendix A: Debt Amortization Schedule", ln=True)
-        pdf.set_font("Arial", '', 9); pdf.ln(5)
-        
-        # Table Header
+        pdf.set_font("Arial", 'B', 14); pdf.cell(0, 10, "Appendix A: Debt Amortization Schedule", ln=True); pdf.ln(5)
         pdf.set_fill_color(31, 73, 125); pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Arial", 'B', 9)
         pdf.cell(20, 8, "Year", 1, 0, 'C', 1); pdf.cell(40, 8, "Principal", 1, 0, 'C', 1)
         pdf.cell(40, 8, "Interest", 1, 0, 'C', 1); pdf.cell(40, 8, "Total Payment", 1, 0, 'C', 1)
         pdf.cell(50, 8, "Remaining Balance", 1, 1, 'C', 1)
-        
-        pdf.set_text_color(0, 0, 0)
+        pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", '', 9)
         for row in amort_schedule:
             pdf.cell(20, 7, str(row['Year']), 1, 0, 'C')
             pdf.cell(40, 7, f"${row['Principal']:,.0f}", 1, 0, 'R')
             pdf.cell(40, 7, f"${row['Interest']:,.0f}", 1, 0, 'R')
-            pdf.cell(40, 7, f"${row['Total Pmt']:,.0f}", 1, 0, 'R')
-            pdf.cell(50, 7, f"${row['Balance']:,.0f}", 1, 1, 'R')
+            pdf.cell(40, 7, f"${row['Total Payment']:,.0f}", 1, 0, 'R')
+            pdf.cell(50, 7, f"${row['Remaining Balance']:,.0f}", 1, 1, 'R')
 
     response = pdf.output(dest='S')
     return bytes(response) if not isinstance(response, str) else response.encode('latin-1')
@@ -1352,24 +1347,99 @@ def show_acquisition():
                             time.sleep(1) # Delay so the user sees the green success message
                             st.rerun()
 
-        # Final Buttons
+        # 7. FINAL ACTIONS (Bottom of Page)
         st.divider()
-        strat_notes = st.text_area("Executive Rationale", key=f"notes_{rc}")
-        b1, b2, b3 = st.columns(3)
-        if b1.button("📁 Save to Vault", use_container_width=True):
-            new = {"Sim_ID": len(df_hist_master)+1, "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"), "Simulator": full_sim_name, "Target": target_name, "State": target_state, "City": target_city, "Verdict": verdict, "ROI": f"{cash_roi:.1f}%", "Leverage": f"{total_lev:.2f}x", "Reasons": strat_notes}
-            pd.concat([df_hist_master, pd.DataFrame([new])]).to_csv(db_file, index=False)
-            st.success("Analysis Archived.")
         
-        if b2.button("📄 Export Summary PDF", use_container_width=True):
-            p_bytes = create_pdf({"Target": target_name, "Verdict": verdict, "Reasons": strat_notes, "State": target_state}, {"ROI": f"{cash_roi:.1f}%", "Leverage": f"{total_lev:.2f}x"})
-            st.download_button("Download PDF", p_bytes, f"Analysis_{target_name}.pdf")
+        # 1. Capture the input and check status
+        strat_notes = st.text_area("Enter rationale details...", key=f"notes_{rc}")
+        
+        # 2. PERMANENT CONFIRMATION BOX
+        # This block remains visible as long as there is text in the box
+        if strat_notes.strip():
+            st.success("✅ **Rationale Captured:** Your notes are synced and will be included in the Vault and PDF Export.")
+        else:
+            st.info("ℹ️ **Status:** Enter strategic rationale above to include it in the final report.")
 
-        if b3.button("🔄 Clear & Restart Simulation", use_container_width=True):
-            st.session_state.reset_counter += 1
-            for k in list(st.session_state.keys()):
-                if "run_sim" in k: del st.session_state[k]
-            st.rerun()
+        st.divider()
+        b1, b2, b3 = st.columns(3)
+        
+        with b1:
+            if st.button("📁 Save Simulation to Vault", use_container_width=True):
+                new_entry = {
+                    "Sim_ID": len(df_hist_master)+1, 
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "Simulator": full_sim_name, 
+                    "Target": target_name, 
+                    "State": target_state, 
+                    "City": target_city,
+                    "Verdict": verdict, 
+                    "ROI": f"{cash_roi:.1f}%", 
+                    "Leverage": f"{total_lev:.2f}x", 
+                    "Reasons": strat_notes
+                }
+                pd.concat([df_hist_master, pd.DataFrame([new_entry])]).to_csv(db_file, index=False)
+                st.success("Analysis archived in vault.")
+
+        with b2:
+            # The "Export" button prepares the data
+            if st.button("📄 Export Summary PDF", use_container_width=True):
+                # 1. Prepare Financing Structure
+                s_and_u = {
+                    "sources": [
+                        ("Bank Debt", f"${s_new_debt:,.0f}"),
+                        ("Seller Note", f"${s_seller_note:,.0f}"),
+                        ("Cash Equity", f"${cash_equity_needed:,.0f}"),
+                        ("Total Sources", f"${(s_new_debt + s_seller_note + cash_equity_needed):,.0f}")
+                    ],
+                    "uses": [
+                        ("Purchase Price", f"${purchase_price:,.0f}"),
+                        ("Transaction Fees", f"${s_fees:,.0f}"),
+                        ("Total Uses", f"${(purchase_price + s_fees):,.0f}")
+                    ]
+                }
+
+                # 2. Re-calculate Amortization for PDF
+                pdf_amort = []
+                r_bal = s_new_debt
+                a_pri = s_new_debt / loan_term if loan_term > 0 else 0
+                for y in range(1, loan_term + 1):
+                    i_p = r_bal * calc_int
+                    t_p = a_pri + i_p
+                    r_bal -= a_pri
+                    pdf_amort.append({
+                        "Year": f"Y{y}", "Principal": a_pri, "Interest": i_p, 
+                        "Total Payment": t_p, "Remaining Balance": max(0, r_bal)
+                    })
+
+                # 3. Build PDF
+                pdf_b = create_pdf(
+                    rec={"Target": target_name, "Verdict": verdict, "Reasons": strat_notes, "State": target_state, "City": target_city},
+                    kpi_data={
+                        "Purchase Price": f"${purchase_price:,.0f}",
+                        "Purchase Multiple": f"{ebitda_mult:.1f}x",
+                        "Closing Leverage": f"{total_lev:.2f}x",
+                        "Year 1 Cash ROI": f"{cash_roi:.1f}%",
+                        "DSCR (Avg)": f"{deal_dscr:.2f}x"
+                    },
+                    sources_uses=s_and_u,
+                    amort_schedule=pdf_amort
+                )
+                
+                # 4. Show the Download button immediately below within the same column
+                st.download_button(
+                    label="⬇️ Click to Download Report",
+                    data=pdf_b,
+                    file_name=f"Analysis_{target_name}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+
+        with b3:
+            if st.button("🔄 Clear & Restart Simulation", use_container_width=True):
+                st.session_state.reset_counter += 1
+                for k in list(st.session_state.keys()):
+                    if "run_sim" in k: del st.session_state[k]
+                st.rerun()
 
 # ==========================================
 # 8. MAIN APP NAVIGATION
