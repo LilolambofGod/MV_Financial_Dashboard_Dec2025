@@ -1292,7 +1292,7 @@ def show_acquisition():
                           delta=f"${consolidated_ebitda - (target_min_ebitda_hurdle or 0):,.0f} vs Goal")
             with k3: 
                 st.metric("Net Free Cash Flow", f"${net_fcf:,.0f}", 
-                          delta=f"${fcf_impact:,.0f} vs 2025 Base")
+                          delta=f"${fcf_impact:,.0f} vs 2025 MV Base")
             with k4: 
                 st.metric("Cash ROI", f"{cash_roi:.1f}%", 
                           delta=f"{cash_roi - (s_h_roi * 100):.1f}% vs Goal")
@@ -1303,9 +1303,8 @@ def show_acquisition():
                 st.metric("Debt / EBITDA", f"{total_leverage:.2f}x", 
                           delta=f"{total_leverage - (s_h_lev or 0):.2f} vs Hurdle", delta_color="inverse")
             with k6: 
-                # margin_impact is now safely defined above
                 st.metric("Margin Profile", f"{pf_margin_y1:.1f}%", 
-                          delta=f"{margin_impact:+.1f}% vs 2025 Base")
+                          delta=f"{margin_impact:+.1f}% vs 2025 MV Base")
             with k7: 
                 st.metric("Cash Required", f"${cash_equity_needed:,.0f}", 
                           delta=f"${(s_h_cash or 0) - cash_equity_needed:,.0f} Budget")
@@ -1313,66 +1312,65 @@ def show_acquisition():
                 st.metric("EBITDA Multiple", f"{ebitda_mult:.1f}x", 
                           delta=f"{ebitda_mult - (s_h_mult or 0):.1f} vs Limit", delta_color="inverse")
 
-     # --- 6. TABS NAVIGATION (FIXED ORDER) ---
-    st.divider()
-    
-    # 1. Define the list FIRST to avoid NameError
-    tabs_list = ["📊 Financial Bridge", "📈 Amortization", "🧪 Sensitivity Analysis", "📝 Record Management"]
+        # 5. FIXED: None-safe formatting for Transaction Costs
+        st.write(f"**Transaction Costs:** ${transaction_fees if transaction_fees is not None else 0:,.0f}")
 
-    # 2. Initialize the session state if it doesn't exist
-    if 'active_tab' not in st.session_state:
-        st.session_state.active_tab = tabs_list[0]
+        # --- 6. TABS NAVIGATION (Gated and Aligned) ---
+        st.divider()
+        tabs_list = ["📊 Financial Bridge", "📈 Amortization", "🧪 Sensitivity Analysis", "📝 Record Management"]
 
-    # 3. Now call the radio widget using the defined tabs_list
-    st.session_state.active_tab = st.radio(
-        "Simulation Navigation", 
-        options=tabs_list, 
-        horizontal=True, 
-        label_visibility="collapsed", 
-        key=f"nav_bar_final_{rc}" 
-    )
-    st.divider()  
+        if 'active_tab' not in st.session_state:
+            st.session_state.active_tab = tabs_list[0]
+
+        st.session_state.active_tab = st.radio(
+            "Simulation Navigation", 
+            options=tabs_list, 
+            horizontal=True, 
+            label_visibility="collapsed", 
+            key=f"nav_bar_final_{rc}"
+        )
+        st.divider()
  
     # 3. TAB CONTENT LOGIC
-    if st.session_state.active_tab == "📊 Financial Bridge":
-        st.markdown("### EBITDA Bridge: 2025 Base to Pro-Forma")
+        if st.session_state.active_tab == "📊 Financial Bridge":
+            st.markdown("### EBITDA Bridge: 2025 Base to Pro-Forma")
         # Logic to visualize the value-add of the acquisition
-        bridge_data = {
-            "2025 MV Base": mv_ebitda_base,
-            "Acquisition EBITDA": s_t_ebitda,
-            "Estimated Synergies": (s_t_ebitda * synergy_pct),
-            "Pro-Forma Total": consolidated_ebitda
-        }
+            bridge_data = {
+                "2025 MV Base": mv_ebitda_base,
+                "Acquisition EBITDA": s_t_ebitda,
+                "Estimated Synergies": (s_t_ebitda * synergy_pct),
+                "Pro-Forma Total": consolidated_ebitda
+            }
         # Use bar_chart for immediate visualization
-        st.bar_chart(bridge_data)
+            st.bar_chart(bridge_data)
 
-    elif st.session_state.active_tab == "📈 Amortization":
-        amort_data = []
-        rem_bal = new_debt
-        ann_pri = new_debt / loan_term
-        for y in range(1, loan_term + 1):
-            i_pmt = rem_bal * int_rate_val
-            t_pmt = ann_pri + i_pmt
-            rem_bal -= ann_pri
-            amort_data.append({"Year": f"Y{y}", "Principal": ann_pri, "Interest": i_pmt, "Total Pmt": t_pmt, "Balance": max(0, rem_bal)})
-            df_amort = pd.DataFrame(amort_data)
-            st.dataframe(df_amort.set_index("Year").style.format("${:,.0f}"), use_container_width=True)
+        elif st.session_state.active_tab == "📈 Amortization":
+            amort_data = []
+            rem_bal = new_debt
+            ann_pri = new_debt / loan_term
+            for y in range(1, loan_term + 1):
+                i_pmt = rem_bal * int_rate_val
+                t_pmt = ann_pri + i_pmt
+                rem_bal -= ann_pri
+                amort_data.append({"Year": f"Y{y}", "Principal": ann_pri, "Interest": i_pmt, "Total Pmt": t_pmt, "Balance": max(0, rem_bal)})
+                df_amort = pd.DataFrame(amort_data)
+                st.dataframe(df_amort.set_index("Year").style.format("${:,.0f}"), use_container_width=True)
         
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df_amort.to_excel(writer, index=False, sheet_name='Amortization')
-        st.download_button("📥 Export Schedule", buffer.getvalue(), f"Amortization_{target_name}.xlsx", key=f"dl_am_{rc}")
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                df_amort.to_excel(writer, index=False, sheet_name='Amortization')
+            st.download_button("📥 Export Schedule", buffer.getvalue(), f"Amortization_{target_name}.xlsx", key=f"dl_am_{rc}")
         
-        st.divider()
-        st.markdown("#### Debt Service Coverage Trend")
-        df_amort["DSCR_Safety"] = consolidated_ebitda / df_amort["Total Pmt"]
-        fig_dscr = px.line(df_amort, x="Year", y="DSCR_Safety", title="Projected DSCR Over Loan Term", markers=True)
-        fig_dscr.add_hline(y=target_min_dscr_hurdle, line_dash="dash", line_color="red", annotation_text="Lender Minimum Hurdle")
-        fig_dscr.update_layout(yaxis_title="DSCR Ratio (x)", template="plotly_white")
-        st.plotly_chart(fig_dscr, use_container_width=True)
+            st.divider()
+            st.markdown("#### Debt Service Coverage Trend")
+            df_amort["DSCR_Safety"] = consolidated_ebitda / df_amort["Total Pmt"]
+            fig_dscr = px.line(df_amort, x="Year", y="DSCR_Safety", title="Projected DSCR Over Loan Term", markers=True)
+            fig_dscr.add_hline(y=target_min_dscr_hurdle, line_dash="dash", line_color="red", annotation_text="Lender Minimum Hurdle")
+            fig_dscr.update_layout(yaxis_title="DSCR Ratio (x)", template="plotly_white")
+            st.plotly_chart(fig_dscr, use_container_width=True)
 
-    elif st.session_state.active_tab == "🧪 Sensitivity Analysis":
-        st.markdown("### ROI Sensitivity Analysis")
+        elif st.session_state.active_tab == "🧪 Sensitivity Analysis":
+            st.markdown("### ROI Sensitivity Analysis")
         
         # --- FIXED ALIGNMENT BLOCK ---
         # Ensure these lines match the indentation of the 'st.markdown' above
