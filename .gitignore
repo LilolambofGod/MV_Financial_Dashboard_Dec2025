@@ -1,1 +1,8 @@
 acquisition_history.csv
+MagnaVita_Data.xlsx
+# Ignore any temporary Excel lock files
+~$MagnaVita_Data.xlsx
+* .xlsx
+
+# Ignore Python cache
+__pycache__/
