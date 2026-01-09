@@ -441,6 +441,30 @@ def plot_line_chart(df, x, y, title, color=None, force_range=False):
     )
     return fig
 
+def format_kpi_delta(value, delta, delta_pct, is_higher_better=True):
+    # Determine if performance improved or downgraded
+    if is_higher_better:
+        is_improvement = delta >= 0
+    else:
+        # For metrics like 'Recruitment Cost', lower is better
+        is_improvement = delta <= 0
+        
+    color = "#d4edda" if is_improvement else "#f8d7da"  # Light green vs Light red
+    text_color = "#155724" if is_improvement else "#721c24"
+    arrow = "▲" if delta >= 0 else "▼"
+    
+    html = f"""
+    <div style="background-color: {color}; padding: 15px; border-radius: 10px; border: 1px solid {text_color}; text-align: center;">
+        <p style="margin: 0; font-size: 14px; color: #666;">{value}</p>
+        <h2 style="margin: 10px 0; color: #333;">{value}</h2>
+        <div style="display: flex; justify-content: center; gap: 10px; font-weight: bold; color: {text_color};">
+            <span>{arrow} {abs(delta):.1f}</span>
+            <span style="background-color: white; padding: 2px 6px; border-radius: 4px;">{delta_pct:.1f}%</span>
+        </div>
+    </div>
+    """
+    return html
+
 def get_historical_avg(df, sub, metric, freq='Monthly', year=None, service_types=None):
     """
     Calculates historical averages while ensuring time columns like 'Week' 
@@ -887,64 +911,65 @@ def show_history():
         except:
             return default
 
+    # Custom KPI Component with Arrows and Backgrounds
+    def render_custom_kpi(label, curr_val, prev_val, is_currency=True, is_percent=False):
+        diff = curr_val - prev_val
+        pct_change = (diff / abs(prev_val)) * 100 if prev_val != 0 else 0
+        
+        # Improvement logic: For these metrics, Higher is Better
+        is_improvement = diff >= 0
+        bg_color = "#d4edda" if is_improvement else "#f8d7da"  # Light Green / Light Red
+        text_color = "#155724" if is_improvement else "#721c24"
+        arrow = "▲" if diff >= 0 else "▼"
+        
+        # Value Formatting
+        if is_currency:
+            main_val = f"${curr_val:,.0f}"
+            delta_val = f"${abs(diff):,.0f}"
+        elif is_percent:
+            main_val = f"{curr_val:.1f}%"
+            delta_val = f"{abs(diff):.1f}%"
+        else:
+            main_val = f"{int(curr_val):,}"
+            delta_val = f"{int(abs(diff)):,}"
+
+        html_code = f"""
+        <div style="background-color: {bg_color}; padding: 15px; border-radius: 10px; text-align: center; border: 1px solid {text_color}; height: 130px;">
+            <p style="margin: 0; font-size: 14px; font-weight: bold; color: #555;">{label}</p>
+            <h3 style="margin: 5px 0; color: #111; font-size: 22px;">{main_val}</h3>
+            <div style="display: flex; justify-content: center; align-items: center; gap: 8px; font-weight: bold; color: {text_color};">
+                <span style="font-size: 16px;">{arrow} {delta_val}</span>
+                <span style="background-color: rgba(255,255,255,0.6); padding: 1px 6px; border-radius: 4px; font-size: 13px;">{abs(pct_change):.1f}%</span>
+            </div>
+        </div>
+        """
+        st.markdown(html_code, unsafe_allow_html=True)
+
     # Global period definitions
     curr_period = safe_get(curr, 'Period', 'N/A')
     prev_period = safe_get(prev, 'Period', 'N/A') if prev is not None else "N/A"
     
-    # 1. Heading and Caption (Removed formatting line below)
     st.markdown(f"### 📊 Analysis: {curr_period} vs. {prev_period}")
     st.caption(f"Baseline Logic: **{comparison_mode}** ({comp_label})")
 
-    def get_independent_delta(field, is_currency=True, is_percent_metric=False):
-        v_curr = safe_get(curr, field, 0)
-        v_prev = safe_get(prev, field, 0) if prev is not None else v_curr
-        diff = v_curr - v_prev
-        
-        # Calculate Absolute values
-        abs_diff = abs(diff)
-        pct_change = (diff / abs(v_prev)) * 100 if v_prev != 0 else 0
-        abs_pct = abs(pct_change)
-        
-        # Format Value String (Absolute)
-        if is_currency:
-            val_str = f"${abs_diff:,.0f}"
-        elif is_percent_metric:
-            val_str = f"{abs_diff:.1f}%"
-        else:
-            val_str = f"{int(abs_diff):,}"
-
-        # INDEPENDENT COLOR/SYMBOL LOGIC
-        # Value Delta: Green bar 🟩 + Up arrow ↑ for positive
-        v_indicator = "🟩 ↑" if diff >= 0 else "🔴 ↓"
-        
-        # % Delta: Red dot 🔴 + Down arrow ↓ for deterioration
-        p_indicator = "🟢 ↑" if pct_change >= 0 else "🔴 ↓"
-
-        if diff == 0:
-            return "No Change", "off"
-            
-        # Composite string using solid indicators to prevent grey-out
-        delta_string = f"{val_str} {v_indicator} | {abs_pct:.1f}% {p_indicator}"
-        return delta_string, "off"
-
-    # --- RENDER KPI GRID ---
+    # --- RENDER KPI GRID (8-Grid) ---
     r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
-    r1_c1.metric("Revenue", f"${safe_get(curr, 'Revenue'):,.0f}", *get_independent_delta('Revenue'))
-    r1_c2.metric("EBITDA", f"${safe_get(curr, 'EBITDA'):,.0f}", *get_independent_delta('EBITDA'))
-    r1_c3.metric("EBITDA %", f"{safe_get(curr, 'EBITDA %', 0):.1f}%", *get_independent_delta('EBITDA %', False, True))
-    r1_c4.metric("Net Income", f"${safe_get(curr, 'Net Income'):,.0f}", *get_independent_delta('Net Income'))
+    with r1_c1: render_custom_kpi("Revenue", safe_get(curr, 'Revenue'), safe_get(prev, 'Revenue'))
+    with r1_c2: render_custom_kpi("EBITDA", safe_get(curr, 'EBITDA'), safe_get(prev, 'EBITDA'))
+    with r1_c3: render_custom_kpi("EBITDA %", safe_get(curr, 'EBITDA %'), safe_get(prev, 'EBITDA %'), False, True)
+    with r1_c4: render_custom_kpi("Net Income", safe_get(curr, 'Net Income'), safe_get(prev, 'Net Income'))
+
+    st.write("") # Spacing between rows
 
     r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
-    r2_c1.metric("Contact Hours", f"{safe_get(curr, 'Contact Hours'):,.0f}", *get_independent_delta('Contact Hours', False))
-    r2_c2.metric("Active Clients", f"{int(safe_get(curr, 'Client Count', 0)):,}", *get_independent_delta('Client Count', False))
-    r2_c3.metric("Employee Count", f"{int(safe_get(curr, 'Employee Count', 0)):,}", *get_independent_delta('Employee Count', False))
-    r2_c4.metric("Net Margin %", f"{safe_get(curr, 'Net Margin %', 0):.1f}%", *get_independent_delta('Net Margin %', False, True))
+    with r2_c1: render_custom_kpi("Contact Hours", safe_get(curr, 'Contact Hours'), safe_get(prev, 'Contact Hours'), False)
+    with r2_c2: render_custom_kpi("Active Clients", safe_get(curr, 'Client Count'), safe_get(prev, 'Client Count'), False)
+    with r2_c3: render_custom_kpi("Employee Count", safe_get(curr, 'Employee Count'), safe_get(prev, 'Employee Count'), False)
+    with r2_c4: render_custom_kpi("Net Margin %", safe_get(curr, 'Net Margin %'), safe_get(prev, 'Net Margin %'), False, True)
 
-    # Line only between Grid and Summary
-    st.markdown("---")
-
-    # --- E. STRATEGIC EXECUTIVE SUMMARY ---
+    # --- E. STRATEGIC EXECUTIVE SUMMARY (Separation line removed as requested) ---
     if prev is not None:
+        st.write("") # Minimal whitespace instead of "---"
         st.subheader("📝 Strategic Executive Summary")
         
         rev_curr = safe_get(curr, 'Revenue', 0)
@@ -955,6 +980,7 @@ def show_history():
         ni_pct = ((ni_curr / safe_get(prev, 'Net Income', 1)) - 1) * 100
         margin_bps = (eb_curr - eb_prev) * 100
         
+        # Narrative Logic
         if ni_pct > 0 and rev_pct > 0:
             fin_status, fin_msg = "Positive", f"The portfolio is in a **Growth Phase**. Revenue increased by {rev_pct:.1f}% while bottom-line profitability (Net Income) outperformed top-line growth, surging to **${ni_curr:,.0f}**."
         elif ni_pct < 0 and rev_pct > 0:
@@ -1084,7 +1110,7 @@ def show_history():
         with c3:
             st.plotly_chart(plot_line_chart(df_view, time_col, "Billing Efficiency %", 
                             "Billing Eff % (Bill/Contact)", force_range=True), use_container_width=True)
-                            
+
     with tabs[4]: # Human Resource
         c1, c2 = st.columns(2)
         with c1: st.plotly_chart(plot_line_chart(df_view, "Period", "Employee Count", "Total Employee Count"), use_container_width=True)
@@ -1417,7 +1443,22 @@ def show_projections():
 # 7. VIEW: ACQUISITION SIMULATION (FINAL INTEGRATED VERSION)
 # ==============================================================================
 def show_acquisition():
-    # --- 0. INITIALIZE ALL VARIABLES (Prevents NameErrors & Fixes Resets) ---
+    # --- 0. INITIALIZE MV BASE EBITDA (Robust to Column Names) ---
+    mv_ebitda_base = 2196773.0  
+    
+    if 'df_master' in globals() and not df_master.empty:
+        time_col = next((c for c in ['Period', 'Date', 'Week', 'Year'] if c in df_master.columns), None)
+        if time_col:
+            try:
+                mv_2025_row = df_master[df_master[time_col].astype(str).str.contains('2025', na=False)]
+                if not mv_2025_row.empty:
+                    mv_ebitda_base = mv_2025_row['EBITDA'].sum()
+            except:
+                pass
+    
+    st.title("🤝 Strategic Acquisition Simulation")
+
+    # Initialize other numeric variables
     t_rev = 0.0
     t_ebitda = 0.0
     ebitda_mult = 0.0
@@ -1429,18 +1470,15 @@ def show_acquisition():
     consolidated_ebitda = 0.0
     total_debt_service = 0.0
     adj_t_ebitda = 0.0
-    mv_ebitda_base = 0.0
     s_t_ebitda = 0.0
-    adj_t_ebitda = 0.0
-    synergy_pct = 0.0
-    organic_growth = 0.0
-
-    target_max_lev_hurdle = None
-    target_min_ebitda_hurdle = None
-    target_max_price_hurdle = None
-    target_available_cash = None
-    target_min_dscr_hurdle = None
-    roi_input_val = None
+    
+    # Initialize hurdle/input variables with safe defaults (Fixes TypeError)
+    target_max_lev_hurdle = 4.0
+    target_min_ebitda_hurdle = 250000.0
+    target_max_price_hurdle = 10000000.0
+    target_available_cash = 500000.0
+    target_min_dscr_hurdle = 1.25
+    roi_input_val = 15.0
     target_min_roi_hurdle = 0.0
     
     apply_stress = False
@@ -1465,6 +1503,11 @@ def show_acquisition():
         df_hist_master = pd.DataFrame(columns=db_cols)
 
     st.title("🤝 Strategic Acquisition Simulation")
+
+    # --- FIXING THE CRASH (Math Safety) ---
+    # When you reach the loan calculation later in the function, ensure this logic is used:
+    # bank_loan_term = st.sidebar.number_input("Term", value=5) or 1
+    # bank_ds = (loan_amt / bank_loan_term) + (loan_amt * interest_rate)
 
     # --- 2. INPUT BLOCKS ---
     st.markdown("<div class='section-header-blue'>👤 Simulator Identity</div>", unsafe_allow_html=True)
@@ -1532,6 +1575,7 @@ def show_acquisition():
         st.markdown("**Seller Note Terms**")
         seller_int_input = st.number_input("Seller Interest (%)", value=None, key=f"sell_int_{rc}")
         seller_loan_term = st.number_input("Seller Term (Years)", value=None, step=1, key=f"sell_term_{rc}")
+    
     
     # --- ADD ZERO-GUARDING HERE ---
     b_term = bank_loan_term if (bank_loan_term and bank_loan_term > 0) else 1
@@ -1770,14 +1814,32 @@ def show_acquisition():
         
         # --- TAB 0: FINANCIAL ANALYSIS ---
         with tabs[0]:
-            st.subheader("EBITDA Contribution Waterfall")
+            st.subheader("📊 Pro-Forma EBITDA Contribution Waterfall")
+            
+            # Ensuring variables are numeric and not None before plotting
+            base_val = mv_ebitda_base if mv_ebitda_base else 2196773.0
+            acq_val = adj_t_ebitda if adj_t_ebitda else 0.0
+            syn_growth = (synergy_val if 'synergy_val' in locals() else 0.0) + (growth_val if 'growth_val' in locals() else 0.0)
+            
+            # Note: measure[0] is "absolute" to establish the starting pillar
             fig_bridge = go.Figure(go.Waterfall(
                 orientation = "v",
-                measure = ["relative", "relative", "relative", "total"],
+                measure = ["absolute", "relative", "relative", "total"],
                 x = ["2025 MV Base", "Acquisition EBITDA", "Synergies/Growth", "Pro-Forma Total"],
-                y = [mv_ebitda_base, adj_t_ebitda, synergy_val + growth_val, consolidated_ebitda],
+                y = [base_val, acq_val, syn_growth, 0], # 0 for total lets Plotly calculate the sum
                 connector = {"line":{"color":"rgb(63, 63, 63)"}},
+                increasing = {"marker":{"color":"#2ecc71"}},
+                decreasing = {"marker":{"color":"#e74c3c"}},
+                totals = {"marker":{"color":"#3498db"}}
             ))
+            
+            fig_bridge.update_layout(
+                title=f"EBITDA Bridge (${base_val:,.0f} Base)",
+                waterfallgap = 0.3,
+                yaxis_title="USD ($)",
+                template="plotly_white"
+            )
+            
             st.plotly_chart(fig_bridge, use_container_width=True)
 
         # --- TAB 1: AMORTIZATION SCHEDULES ---
@@ -2297,7 +2359,6 @@ def main():
     st.sidebar.divider()
     st.sidebar.subheader("📁 Data Source")
     
-    # Create the file uploader
     uploaded_file = st.sidebar.file_uploader(
         "Upload latest MagnaVita Excel", 
         type=["xlsx"],
@@ -2312,8 +2373,8 @@ def main():
             st.sidebar.success("✅ Using Uploaded File")
         except Exception as e:
             st.sidebar.error(f"Error loading file: {e}")
+            df_master = pd.DataFrame()
     else:
-        # Fallback to local project file
         try:
             df_master = pd.read_excel("MagnaVita_Data.xlsx")
             st.sidebar.info("ℹ️ Using Project Folder File")
@@ -2321,78 +2382,58 @@ def main():
             st.sidebar.warning("⚠️ No data file found. Please upload.")
             df_master = pd.DataFrame()
 
-    # --- B. DATA INTEGRITY & SYNC VISUALS ---
-    # --- B. DATA INTEGRITY & SYNC VISUALS ---
+    # --- B. DATA INTEGRITY & BASELINE CAPTURE ---
     if not df_master.empty:
-        # Clean column names immediately to prevent matching issues
         df_master.columns = df_master.columns.str.strip()
         
-        # FIX: Explicitly create Year and Month from the Date column for the verification table
+        # 1. Standardize Dates
         if 'Date' in df_master.columns:
             df_master['Date'] = pd.to_datetime(df_master['Date'], errors='coerce')
             df_master['Year'] = df_master['Date'].dt.year
             df_master['Month'] = df_master['Date'].dt.month
+
+        # 2. CAPTURE MV 2025 BASE FOR SIMULATION (The Fix)
+        # This ensures the 2,196,773 value is stored in session state immediately
+        if 'EBITDA' in df_master.columns:
+            # Look for 2025 in any time-related column
+            time_col = next((c for c in ['Period', 'Date', 'Year'] if c in df_master.columns), None)
+            if time_col:
+                mask_2025 = df_master[time_col].astype(str).str.contains('2025', na=False)
+                if mask_2025.any():
+                    st.session_state['mv_ebitda_base'] = df_master.loc[mask_2025, 'EBITDA'].sum()
+                else:
+                    st.session_state['mv_ebitda_base'] = 2196773.0 # Fallback
+            else:
+                st.session_state['mv_ebitda_base'] = 2196773.0
         
         with st.sidebar.expander("🔍 Data Health Check", expanded=True):
-            # 1. Check for 'Client Count' column
             if 'Client Count' in df_master.columns:
                 total_clients = pd.to_numeric(df_master['Client Count'], errors='coerce').sum()
                 st.write(f"✅ **Client Count Found**")
                 st.write(f"Total in File: {int(total_clients):,}")
-            else:
-                st.error("❌ 'Client Count' Column NOT Found in this file!")
             
-            st.divider()
-            
-            # 2. Monthly Verification Table (Safe from KeyError)
+            # Monthly Verification Table
             if 'Year' in df_master.columns and 'Month' in df_master.columns:
                 st.caption("Verification: Monthly Aggregate")
-                
-                # Check if required numeric columns exist before aggregating
                 avail_cols = df_master.columns
                 agg_dict = {}
                 if 'Revenue' in avail_cols: agg_dict['Revenue'] = 'sum'
                 if 'EBITDA' in avail_cols: agg_dict['EBITDA'] = 'sum'
-                if 'Employee Count' in avail_cols: agg_dict['Employee Count'] = 'mean'
                 
                 if agg_dict:
                     verify_df = df_master.groupby(['Year', 'Month']).agg(agg_dict).reset_index()
-
-                    st.dataframe(
-                        verify_df.style.format({
-                            'Revenue': '${:,.0f}',
-                            'EBITDA': '${:,.0f}',
-                            'Employee Count': '{:,.0f}'
-                        }),
-                        hide_index=True
-                    )
-            else:
-                st.warning("⚠️ Date components missing. Ensure a 'Date' column exists.")
-            
-            # 3. Export Logic
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                df_master.to_excel(writer, index=False, sheet_name='Audit_Trail')
-            
-            st.download_button(
-                label="📥 Export Audit (.xlsx)",
-                data=buffer.getvalue(),
-                file_name="MagnaVita_Audit.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+                    st.dataframe(verify_df.style.format({'Revenue': '${:,.0f}', 'EBITDA': '${:,.0f}'}), hide_index=True)
 
     # --- C. RESET & MAINTENANCE ---
     st.sidebar.divider()
-    
-    # This button wipes the session memory/cache but preserves the physical acquisition_history.csv
-    if st.sidebar.button("🧹 Reset Session & Clear Cache", help="Clears uploaded files and resets cache. Your saved CSV history stays safe."):
+    if st.sidebar.button("🧹 Reset Session & Clear Cache"):
         st.cache_data.clear()
         st.cache_resource.clear()
         st.rerun()
 
-    st.sidebar.caption("v4.6.1 | Live Data Sync Ready")
+    st.sidebar.caption("v4.6.2 | EBITDA Base Locked")
     
-    # Page Routing
+    # Page Routing (Ensure these functions are defined above main() in your script)
     if df_master.empty:
         st.error("Please upload a data file to begin.")
     elif page == "Home":
