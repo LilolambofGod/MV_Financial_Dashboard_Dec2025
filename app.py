@@ -590,7 +590,7 @@ def show_history():
     if comparison_mode == "Year-over-Year (YoY)":
         mask = (df_view_all["Year"] == curr["Year"]-1)
         for col in [c for c in group_cols if c != "Year"]: mask &= (df_view_all[col] == curr[col])
-        match = df_view_all[mask]
+        match = df_view_all[match]
         if not match.empty:
             prev = match.iloc[0]
             comp_label = f"vs Same {view_by} {int(curr['Year']-1)}"
@@ -598,26 +598,53 @@ def show_history():
         prev = df_view_all.iloc[-2]
         comp_label = f"vs Previous {view_by}"
 
-    def get_delta(field, is_money=False, is_pct=False):
+    # --- UPDATED DELTA FUNCTION (Value + %) ---
+    def get_delta(field, is_money=False, is_pct_field=False):
         if prev is None: return None
-        diff = curr[field] - prev[field]
-        if is_pct: return f"{diff:.1f}%"
-        return f"${diff:,.0f}" if is_money else f"{diff:,.0f}"
+        
+        val_curr = curr[field]
+        val_prev = prev[field]
+        
+        # Calculate Absolute Difference
+        diff = val_curr - val_prev
+        
+        # Calculate Percentage Change (Growth)
+        if val_prev != 0:
+            pct_change = (diff / abs(val_prev)) * 100
+        else:
+            pct_change = 0.0
+
+        # Format Value String
+        if is_pct_field:
+            # Shows point movement, e.g., +2.1%
+            val_str = f"{diff:+.1f}%"
+        elif is_money:
+            # Shows dollar movement, e.g., +$50,000
+            val_str = f"${diff:+,.0f}"
+        else:
+            # Shows unit movement, e.g., +10
+            val_str = f"{diff:+,.0f}"
+            
+        # Format Growth String
+        pct_str = f"{pct_change:+.1f}%"
+
+        # Return combined label: "Value (Growth%)"
+        return f"{val_str} ({pct_str})"
 
     # --- D. KPI DISPLAY (2 ROWS OF 4) ---
     st.markdown(f"### 📊 Analysis for Period: {curr['Period']} ({comp_label})")
     
     r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
-    r1_c1.metric("Revenue", f"${curr['Revenue']:,.0f}", delta=get_delta('Revenue', True))
-    r1_c2.metric("EBITDA", f"${curr['EBITDA']:,.0f}", delta=get_delta('EBITDA', True))
-    r1_c3.metric("EBITDA %", f"{curr['EBITDA %']:.1f}%", delta=get_delta('EBITDA %', False, True))
-    r1_c4.metric("Net Income", f"${curr['Net Income']:,.0f}", delta=get_delta('Net Income', True))
+    r1_c1.metric("Revenue", f"${curr['Revenue']:,.0f}", delta=get_delta('Revenue', is_money=True))
+    r1_c2.metric("EBITDA", f"${curr['EBITDA']:,.0f}", delta=get_delta('EBITDA', is_money=True))
+    r1_c3.metric("EBITDA %", f"{curr['EBITDA %']:.1f}%", delta=get_delta('EBITDA %', is_pct_field=True))
+    r1_c4.metric("Net Income", f"${curr['Net Income']:,.0f}", delta=get_delta('Net Income', is_money=True))
     
     r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
     r2_c1.metric("Contact Hours", f"{curr['Contact Hours']:,.0f}", delta=get_delta('Contact Hours'))
     r2_c2.metric("Active Clients", f"{curr['Client Count']:,.0f}", delta=get_delta('Client Count'))
     r2_c3.metric("Employee Count", f"{curr['Employee Count']:,.0f}", delta=get_delta('Employee Count'))
-    r2_c4.metric("Net Margin %", f"{curr['Net Margin %']:.1f}%", delta=get_delta('Net Margin %', False, True))
+    r2_c4.metric("Net Margin %", f"{curr['Net Margin %']:.1f}%", delta=get_delta('Net Margin %', is_pct_field=True))
 
     # --- E. EXECUTIVE PERFORMANCE SUMMARY (ENHANCED STRATEGIC INSIGHTS) ---
     if prev is not None:
