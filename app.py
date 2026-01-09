@@ -21,9 +21,24 @@ def search_vault(df_hist_master):
 # ==========================================
 # PDF ENGINE (FIXED KEYS)
 # ==========================================
-def create_pdf(rec, kpi_data, sources_uses=None, amort_schedule=None):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
+def create_pdf(rec, kpi_data, sources_uses, amort_schedule):
+    from fpdf import FPDF
+    from datetime import datetime
+
+    # 1. Define a custom PDF class to handle Footer and Page Numbers
+    class PDF(FPDF):
+        def footer(self):
+            # Position at 1.5 cm from bottom
+            self.set_y(-15)
+            self.set_font('Arial', 'I', 8)
+            self.set_text_color(128, 128, 128)
+            # Confidentiality Disclaimer
+            self.cell(0, 10, 'CONFIDENTIAL - FOR STRATEGIC REVIEW ONLY', 0, 0, 'L')
+            # Page Number
+            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'R')
+
+    pdf = PDF() # Use our custom class
+    pdf.alias_nb_pages() # Allows for "Page 1 of X" logic if needed
     pdf.add_page()
     
     # --- HEADER ---
@@ -42,47 +57,37 @@ def create_pdf(rec, kpi_data, sources_uses=None, amort_schedule=None):
     pdf.cell(0, 8, " 1. Target Identity & Location", ln=True, fill=True)
     pdf.set_font("Arial", '', 10); pdf.ln(2)
     
-    # Target and Location Info
     pdf.cell(95, 7, f"Target Name: {str(rec.get('Target', 'N/A'))}")
     pdf.cell(95, 7, f"Location: {str(rec.get('City', 'N/A'))}, {str(rec.get('State', 'N/A'))}", ln=True)
     pdf.ln(2)
 
     # --- THE VERDICT BANNER BOX ---
     verdict_str = str(rec.get('Verdict', 'N/A')).upper()
-    
-    # Set Fill and Text Colors based on Verdict
     if "PASS" in verdict_str:
-        pdf.set_fill_color(39, 174, 96)  # Green
-        pdf.set_text_color(255, 255, 255) # White text
+        pdf.set_fill_color(39, 174, 96); pdf.set_text_color(255, 255, 255)
     elif "CAUTION" in verdict_str:
-        pdf.set_fill_color(241, 196, 15) # Yellow/Amber
-        pdf.set_text_color(0, 0, 0)       # Black text (better for yellow)
+        pdf.set_fill_color(241, 196, 15); pdf.set_text_color(0, 0, 0)
     elif "FAIL" in verdict_str:
-        pdf.set_fill_color(231, 76, 60)  # Red
-        pdf.set_text_color(255, 255, 255) # White text
+        pdf.set_fill_color(231, 76, 60); pdf.set_text_color(255, 255, 255)
     else:
-        pdf.set_fill_color(200, 200, 200) # Grey
-        pdf.set_text_color(0, 0, 0)
+        pdf.set_fill_color(200, 200, 200); pdf.set_text_color(0, 0, 0)
 
     pdf.set_font("Arial", 'B', 12)
-    # This creates a full-width box (0) with the background fill (fill=True)
     pdf.cell(0, 10, f" VERDICT: {verdict_str}", ln=True, align='C', fill=True)
-    
-    # --- IMPORTANT: RESET COLORS IMMEDIATELY ---
-    pdf.set_text_color(0, 0, 0)      # Reset text to Black
-    pdf.set_draw_color(0, 0, 0)      # Reset line colors
+    pdf.set_text_color(0, 0, 0)
     pdf.ln(4)
 
     # --- 2. PERFORMANCE KPIs ---
-    # Now that color is reset, these will be black
     pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
     pdf.cell(0, 8, " 2. Key Performance Indicators (Year 1)", ln=True, fill=True)
     pdf.set_font("Arial", '', 9); pdf.ln(2)
     for label, value in kpi_data.items():
-        pdf.cell(110, 7, f" {str(label)}", border=1); pdf.cell(80, 7, f" {str(value)}", border=1, ln=True, align='C')
+        if label != "dscr":
+            pdf.cell(110, 7, f" {str(label)}", border=1)
+            pdf.cell(80, 7, f" {str(value)}", border=1, ln=True, align='C')
     pdf.ln(4)
 
-    # --- 3. SOURCES & USES (Financing Structure) ---
+    # --- 3. SOURCES & USES ---
     if sources_uses:
         pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
         pdf.cell(0, 8, " 3. Deal Financing Structure (Sources & Uses)", ln=True, fill=True); pdf.ln(2)
@@ -105,25 +110,95 @@ def create_pdf(rec, kpi_data, sources_uses=None, amort_schedule=None):
     reasoning = str(rec.get('Reasons', 'No notes provided.')).encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 5, reasoning)
 
-    # --- PAGE 2: AMORTIZATION SCHEDULE ---
+    # --- AMORTIZATION SCHEDULES (Appendix A & B) ---
     if amort_schedule:
         pdf.add_page()
-        pdf.set_font("Arial", 'B', 14); pdf.cell(0, 10, "Appendix A: Debt Amortization Schedule", ln=True); pdf.ln(5)
-        pdf.set_fill_color(31, 73, 125); pdf.set_text_color(255, 255, 255)
-        pdf.set_font("Arial", 'B', 9)
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, "Appendix A: Bank Loan Amortization Schedule", ln=True); pdf.ln(2)
+
+        t_b_p = t_b_i = t_b_pay = 0
+        pdf.set_font("Arial", 'B', 9); pdf.set_fill_color(225, 245, 254)
         pdf.cell(20, 8, "Year", 1, 0, 'C', 1); pdf.cell(40, 8, "Principal", 1, 0, 'C', 1)
         pdf.cell(40, 8, "Interest", 1, 0, 'C', 1); pdf.cell(40, 8, "Total Payment", 1, 0, 'C', 1)
-        pdf.cell(50, 8, "Remaining Balance", 1, 1, 'C', 1)
-        pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", '', 9)
-        for row in amort_schedule:
-            pdf.cell(20, 7, str(row['Year']), 1, 0, 'C')
-            pdf.cell(40, 7, f"${row['Principal']:,.0f}", 1, 0, 'R')
-            pdf.cell(40, 7, f"${row['Interest']:,.0f}", 1, 0, 'R')
-            pdf.cell(40, 7, f"${row['Total Payment']:,.0f}", 1, 0, 'R')
-            pdf.cell(50, 7, f"${row['Remaining Balance']:,.0f}", 1, 1, 'R')
+        pdf.cell(40, 8, "Balance", 1, 1, 'C', 1)
 
-    response = pdf.output(dest='S')
-    return bytes(response) if not isinstance(response, str) else response.encode('latin-1')
+        pdf.set_font("Arial", '', 9)
+        for row in amort_schedule:
+            if row['Year'] == "CUMULATIVE TOTALS": continue
+            if row.get('Bank Payment', 0) > 0:
+                pdf.cell(20, 7, str(row['Year']), 1, 0, 'C')
+                pdf.cell(40, 7, f"{row.get('Bank Principal', 0):,.0f}", 1, 0, 'R')
+                pdf.cell(40, 7, f"{row.get('Bank Interest', 0):,.0f}", 1, 0, 'R')
+                pdf.cell(40, 7, f"{row.get('Bank Payment', 0):,.0f}", 1, 0, 'R')
+                pdf.cell(40, 7, f"{row.get('Bank Balance', 0):,.0f}", 1, 1, 'R')
+                t_b_p += row.get('Bank Principal', 0); t_b_i += row.get('Bank Interest', 0); t_b_pay += row.get('Bank Payment', 0)
+
+        pdf.set_font("Arial", 'B', 9); pdf.set_fill_color(240, 240, 240)
+        pdf.cell(20, 8, "TOTAL", 1, 0, 'C', 1); pdf.cell(40, 8, f"{t_b_p:,.0f}", 1, 0, 'R', 1)
+        pdf.cell(40, 8, f"{t_b_i:,.0f}", 1, 0, 'R', 1); pdf.cell(40, 8, f"{t_b_pay:,.0f}", 1, 0, 'R', 1); pdf.cell(40, 8, "-", 1, 1, 'C', 1)
+
+        pdf.ln(10)
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, "Appendix B: Seller Note Amortization Schedule", ln=True); pdf.ln(2)
+
+        t_s_p = t_s_i = t_s_pay = 0
+        pdf.set_font("Arial", 'B', 9); pdf.set_fill_color(255, 243, 224)
+        pdf.cell(20, 8, "Year", 1, 0, 'C', 1); pdf.cell(40, 8, "Principal", 1, 0, 'C', 1)
+        pdf.cell(40, 8, "Interest", 1, 0, 'C', 1); pdf.cell(40, 8, "Total Payment", 1, 0, 'C', 1)
+        pdf.cell(40, 8, "Balance", 1, 1, 'C', 1)
+
+        pdf.set_font("Arial", '', 9)
+        for row in amort_schedule:
+            if row['Year'] == "CUMULATIVE TOTALS": continue
+            if row.get('Seller Payment', 0) > 0:
+                pdf.cell(20, 7, str(row['Year']), 1, 0, 'C')
+                pdf.cell(40, 7, f"{row.get('Seller Principal', 0):,.0f}", 1, 0, 'R')
+                pdf.cell(40, 7, f"{row.get('Seller Interest', 0):,.0f}", 1, 0, 'R')
+                pdf.cell(40, 7, f"{row.get('Seller Payment', 0):,.0f}", 1, 0, 'R')
+                pdf.cell(40, 7, f"{row.get('Seller Balance', 0):,.0f}", 1, 1, 'R')
+                t_s_p += row.get('Seller Principal', 0); t_s_i += row.get('Seller Interest', 0); t_s_pay += row.get('Seller Payment', 0)
+
+        pdf.set_font("Arial", 'B', 9); pdf.set_fill_color(240, 240, 240)
+        pdf.cell(20, 8, "TOTAL", 1, 0, 'C', 1); pdf.cell(40, 8, f"{t_s_p:,.0f}", 1, 0, 'R', 1)
+        pdf.cell(40, 8, f"{t_s_i:,.0f}", 1, 0, 'R', 1); pdf.cell(40, 8, f"{t_s_pay:,.0f}", 1, 0, 'R', 1); pdf.cell(40, 8, "-", 1, 1, 'C', 1)
+
+    # --- PAGE 3: CONSOLIDATED SUMMARY & VERDICT ---
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, "Appendix C: Consolidated Financing Summary", ln=True); pdf.ln(5)
+
+    pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 10)
+    pdf.cell(100, 10, "Metric", 1, 0, 'L', 1); pdf.cell(80, 10, "Total Amount", 1, 1, 'C', 1)
+    
+    pdf.set_font("Arial", '', 10)
+    summary_data = [
+        ("Total Combined Principal", t_b_p + t_s_p),
+        ("Total Interest Expense", t_b_i + t_s_i),
+        ("Total Cash Outlay (Debt Service)", t_b_pay + t_s_pay)
+    ]
+    for metric, value in summary_data:
+        pdf.cell(100, 10, f" {metric}", 1); pdf.cell(80, 10, f"${value:,.0f}", 1, 1, 'R')
+
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, "Financial Health Assessment", ln=True); pdf.ln(2)
+
+    dscr_v = kpi_data.get('dscr', 0)
+    if dscr_v >= 1.25:
+        assess = "HEALTHY: Strong coverage of debt obligations."
+        pdf.set_fill_color(232, 245, 233); pdf.set_text_color(46, 125, 50)
+    elif dscr_v >= 1.0:
+        assess = "TIGHT: Debt is covered but offers minimal safety margin."
+        pdf.set_fill_color(255, 248, 225); pdf.set_text_color(245, 127, 23)
+    else:
+        assess = "CRITICAL: Insufficient cash flow for debt service."
+        pdf.set_fill_color(255, 235, 238); pdf.set_text_color(198, 40, 40)
+
+    pdf.set_font("Arial", 'B', 11)
+    pdf.multi_cell(0, 12, f"  {assess}", border=1, fill=True)
+
+    pdf_output = pdf.output(dest='S')
+    return bytes(pdf_output)
 
 # ==========================================
 # APP CONFIGURATION
@@ -968,11 +1043,15 @@ def show_acquisition():
     synergy_pct = 0.0
     fcf_conv = 0.0
     debt_pct = 0.0
-    seller_pct = 0.0
-    int_rate_input = None
-    loan_term = None
-    transaction_fees = None
-    
+    consolidated_ebitda = 0.0
+    total_debt_service = 0.0
+    adj_t_ebitda = 0.0
+    mv_ebitda_base = 0.0
+    s_t_ebitda = 0.0
+    adj_t_ebitda = 0.0
+    synergy_pct = 0.0
+    organic_growth = 0.0
+
     target_max_lev_hurdle = None
     target_min_ebitda_hurdle = None
     target_max_price_hurdle = None
@@ -1051,42 +1130,118 @@ def show_acquisition():
         st.metric("Implied Purchase Price", f"${purchase_price:,.0f}")
 
     st.markdown("<div class='section-header-blue'>Step 3: Financing</div>", unsafe_allow_html=True)
-    fi1, fi2, fi3, fi4 = st.columns(4)
+
+    # 1. Input Layout: Percentage Allocation and Terms
+    fi1, fi2, fi3 = st.columns([1, 1.5, 1.5])
+
     with fi1:
+        st.markdown("**Allocation**")
         debt_pct = st.slider("Bank Loan (%)", 0, 100, 0, key=f"fi1a_{rc}") / 100
         seller_pct = st.slider("Seller Note (%)", 0, 100, 0, key=f"fi1b_{rc}") / 100
-    with fi2:
-        # Use value=None for the number input
-        int_rate_input = st.number_input("Interest Rate (%)", value=None, key=f"fi2a_{rc}")
-        
-        # For the slider, start it at a value you define as "unselected" 
-        # Or better: keep it as a number_input for the term to allow a None state
-        loan_term = st.number_input("Term (Years)", value=None, step=1, key=f"fi2b_{rc}")
-        
         transaction_fees = st.number_input("Est. Transaction Fees ($)", value=None, key=f"fi2c_{rc}")
 
-    # Sanitized Math
-    int_rate_val = (int_rate_input / 100) if int_rate_input else 0.0
+    with fi2:
+        st.markdown("**Bank Loan Terms**")
+        bank_int_input = st.number_input("Bank Interest Rate (%)", value=None, key=f"bank_int_{rc}")
+        bank_loan_term = st.number_input("Bank Term (Years)", value=None, step=1, key=f"bank_term_{rc}")
+
+    with fi3:
+        st.markdown("**Seller Note Terms**")
+        seller_int_input = st.number_input("Seller Interest (%)", value=None, key=f"sell_int_{rc}")
+        seller_loan_term = st.number_input("Seller Term (Years)", value=None, step=1, key=f"sell_term_{rc}")
+    
+    # --- ADD ZERO-GUARDING HERE ---
+    b_term = bank_loan_term if (bank_loan_term and bank_loan_term > 0) else 1
+    s_term = seller_loan_term if (seller_loan_term and seller_loan_term > 0) else 1
+
+    # 2. Sanitized Math & Split Debt Service
+    b_rate = (bank_int_input / 100) if bank_int_input else 0.0
+    s_rate = (seller_int_input / 100) if seller_int_input else 0.0
     s_fees = transaction_fees if transaction_fees else 0
+    
+    # ALIAS for legacy code: ensures 'int_rate_val' exists for your heatmaps
+    int_rate_val = b_rate 
+    
     s_new_debt = purchase_price * debt_pct
     s_seller_note = purchase_price * seller_pct
     total_financing = s_new_debt + s_seller_note
     cash_equity_needed = (purchase_price + s_fees) - total_financing
+    
+    # --- STEP 1: FINANCIAL PROJECTIONS (The "Numerator") ---
+    adj_t_ebitda = s_t_ebitda * (calc_ret if apply_stress else 1.0)
+    
+    consolidated_ebitda = (mv_ebitda_base + adj_t_ebitda) + (adj_t_ebitda * synergy_pct)
+    consolidated_ebitda += (consolidated_ebitda * organic_growth)
 
-    with fi3: st.metric("Total Financing", f"${total_financing:,.0f}")
-    with fi4: st.metric("Cash Equity Needed", f"${cash_equity_needed:,.0f}")
+    # --- STEP 2: DEBT RATE DEFINITIONS ---
+    base_b_rate = b_rate  
+    base_s_rate = s_rate
 
-    # Readiness checklist
+    # DYNAMICALLY DETECT THE STRESS VARIABLE
+    # This looks for 'interest_stress' or 'st_int_adj' or 'stress_rate_jump'
+    if 'interest_stress' in locals():
+        stress_rate_jump = interest_stress
+    elif 'st_int_adj' in locals():
+        stress_rate_jump = st_int_adj
+    else:
+        stress_rate_jump = 0.0
+
+    # Apply stress
+    stressed_b_rate = base_b_rate + (stress_rate_jump if apply_stress else 0)
+    stressed_s_rate = base_s_rate + (stress_rate_jump if apply_stress else 0)
+    
+    # ALIAS for legacy code: ensures 'calc_int' is updated for ROI heatmaps
+    calc_int = stressed_b_rate
+
+    # --- STEP 3: DEBT SERVICE MATH ---
+    bank_annual_pri = s_new_debt / b_term
+    seller_annual_pri = s_seller_note / s_term
+    
+    base_debt_service = (bank_annual_pri + (s_new_debt * base_b_rate)) + \
+                        (seller_annual_pri + (s_seller_note * base_s_rate))
+
+    stressed_debt_service = (bank_annual_pri + (s_new_debt * stressed_b_rate)) + \
+                            (seller_annual_pri + (s_seller_note * stressed_s_rate))
+
+    # --- STEP 4: KPI MATH WITH DELTAS ---
+    # Base Case (Record Vault)
+    deal_dscr = (consolidated_ebitda * fcf_conv) / base_debt_service if base_debt_service > 0 else 0
+    base_roi = ((mv_ebitda_base + s_t_ebitda) * fcf_conv - base_debt_service) / cash_equity_needed * 100 if cash_equity_needed > 0 else 0
+    
+    # Live Case (Dashboard UI)
+    live_dscr = (consolidated_ebitda * fcf_conv) / stressed_debt_service if stressed_debt_service > 0 else 0
+    cash_roi = (consolidated_ebitda * fcf_conv - stressed_debt_service) / cash_equity_needed * 100 if cash_equity_needed > 0 else 0
+
+    # Delta Calculations
+    dscr_delta_val = live_dscr - deal_dscr
+    dscr_delta_pct = (dscr_delta_val / deal_dscr * 100) if deal_dscr > 0 else 0
+
+    ebitda_delta_val = consolidated_ebitda - (mv_ebitda_base + s_t_ebitda)
+    ebitda_delta_pct = (ebitda_delta_val / (mv_ebitda_base + s_t_ebitda) * 100) if (mv_ebitda_base + s_t_ebitda) > 0 else 0
+
+    roi_delta_val = cash_roi - base_roi
+    roi_delta_pct = (roi_delta_val / base_roi * 100) if base_roi > 0 else 0
+
+    # 3. Summary Metrics Row
+    st.divider()
+    m1, m2, m3, m4 = st.columns(4)
+    with m1: st.metric("Bank Loan Amt", f"${s_new_debt:,.0f}")
+    with m2: st.metric("Seller Note Amt", f"${s_seller_note:,.0f}")
+    with m3: st.metric("Total Financing", f"${total_financing:,.0f}")
+    with m4: st.metric("Cash Equity Needed", f"${cash_equity_needed:,.0f}", delta_color="inverse")
+
+    # 4. Updated Readiness Checklist
     checklist = {
         "Identity": full_sim_name != "",
         "Mandates": all(v is not None for v in [target_max_lev_hurdle, target_min_ebitda_hurdle, target_max_price_hurdle]),
         "Target": target_name != "" and target_state != "",
         "Financials": s_t_ebitda > 0 and ebitda_mult > 0,
         "Financing Structure": (debt_pct > 0 or seller_pct > 0),
-        "Loan Terms": loan_term is not None,  # Will be False if initialized to None
-        "Interest Rate": int_rate_input is not None,
+        "Bank Terms": bank_int_input is not None and bank_loan_term is not None,
+        "Seller Terms": seller_int_input is not None and seller_loan_term is not None,
         "Closing Costs": transaction_fees is not None
     }
+
     progress_pct = sum(checklist.values()) / len(checklist)
     bar_color = "#FF4B4B" if progress_pct < 0.4 else "#FFA500" if progress_pct < 1 else "#27AE60"
 
@@ -1134,16 +1289,46 @@ def show_acquisition():
         growth_val = (mv_ebitda_base + adj_t_ebitda) * organic_growth
         consolidated_ebitda = (mv_ebitda_base + adj_t_ebitda) + synergy_val + growth_val
         
-        ann_debt_svc = (s_new_debt / loan_term) + (s_new_debt * calc_int)
-        deal_dscr = consolidated_ebitda / ann_debt_svc if ann_debt_svc > 0 else 0
-        net_fcf = (consolidated_ebitda * fcf_conv) - ann_debt_svc
-        cash_roi = (net_fcf / (cash_equity_needed if cash_equity_needed > 0 else 1)) * 100
-        total_lev = (s_new_debt + s_seller_note + 1500000) / (consolidated_ebitda if consolidated_ebitda > 0 else 1)
+        # --- INDEPENDENT DEBT SERVICE CALCULATIONS ---
+
+        # A. Bank Loan Annual Payment
+        # Standard P+I calculation: (Principal / Term) + (Principal * Rate)
+        bank_annual_pri = s_new_debt / bank_loan_term if (bank_loan_term and bank_loan_term > 0) else 0
+        bank_annual_int = s_new_debt * b_rate
+        total_bank_svc = bank_annual_pri + bank_annual_int
+
+        # B. Seller Note Annual Payment
+        seller_annual_pri = s_seller_note / seller_loan_term if (seller_loan_term and seller_loan_term > 0) else 0
+        seller_annual_int = s_seller_note * s_rate
+        total_seller_svc = seller_annual_pri + seller_annual_int
+
+        # C. Total Combined Debt Service
+        # This is the 'Denominator' for your DSCR
+        total_annual_debt_service = total_bank_svc + total_seller_svc
+
+        # --- UPDATED CASH FLOW MATH ---
+
+        # We use the 'adj_t_ebitda' (which handles stress testing if active)
+        # and 'fcf_conv' (Free Cash Flow conversion percentage)
+        annual_fcf_pre_debt = adj_t_ebitda * fcf_conv
+
+        # Year 1 Cash Flow After All Debt
+        annual_fcf_post_debt = annual_fcf_pre_debt - total_annual_debt_service
+
+        # DSCR Calculation
+        deal_dscr = (annual_fcf_pre_debt / total_annual_debt_service) if total_annual_debt_service > 0 else 0
+
+        # Cash ROI Calculation
+        cash_roi = (annual_fcf_post_debt / cash_equity_needed * 100) if cash_equity_needed > 0 else 0
         
         pf_rev = (mv_rev_base + (t_rev or 0)) * (1 + organic_growth)
         pf_margin = (consolidated_ebitda / pf_rev * 100) if pf_rev > 0 else 0
 
         # Verdict
+        # Calculate Total Leverage (Debt / EBITDA)
+        total_lev = (s_new_debt + s_seller_note) / (consolidated_ebitda if consolidated_ebitda > 0 else 1)
+        net_fcf = annual_fcf_post_debt
+        
         # Define Buffers for Caution (e.g., within 10% of a hurdle)
         dscr_buffer = (target_min_dscr_hurdle or 1.2) * 1.10
         lev_buffer = (target_max_lev_hurdle or 4.0) * 0.90
@@ -1197,8 +1382,10 @@ def show_acquisition():
 
         # 6. TAB NAVIGATION (Consolidated)
         st.divider()
-        tabs = st.tabs(["📊 Financial Bridge", "📈 Amortization", "🧪 Sensitivity Analysis", "🏦 Debt Capacity", "📝 Record Management"])
+        tabs = st.tabs(["📊 Financial Bridge", "📈 Amortization", "🧪 Sensitivity Analysis", "📝 Record Management"])
 
+        
+        # --- TAB 0: FINANCIAL ANALYSIS ---
         with tabs[0]:
             st.subheader("EBITDA Contribution Waterfall")
             fig_bridge = go.Figure(go.Waterfall(
@@ -1209,133 +1396,213 @@ def show_acquisition():
                 connector = {"line":{"color":"rgb(63, 63, 63)"}},
             ))
             st.plotly_chart(fig_bridge, use_container_width=True)
-                
+
+        # --- TAB 1: AMORTIZATION SCHEDULES ---
         with tabs[1]:
-            st.subheader("Debt Repayment & Coverage Analysis")
+            st.subheader("📊 Amortization Schedules")
+
+            # --- 1. DYNAMICALLY CAPTURE SLIDER VALUE ---
+            # Use the stress adjustment from the stress testing section above
+            current_stress = stress_rate_jump if apply_stress else 0.0
             
-            # --- 1. CALCULATE AMORTIZATION DATA ---
-            amort = []
-            rem_bal = s_new_debt
-            ann_pri = s_new_debt / loan_term if loan_term > 0 else 0
-            
-            for y in range(1, loan_term + 1):
-                i_pmt = rem_bal * calc_int
-                t_pmt = ann_pri + i_pmt
-                rem_bal -= ann_pri
-                # DSCR Calculation for this period
-                dscr_y = consolidated_ebitda / t_pmt if t_pmt > 0 else 0
+            # Use the captured stress value
+            active_b_rate = base_b_rate + (current_stress if apply_stress else 0)
+            active_s_rate = base_s_rate + (current_stress if apply_stress else 0)
+
+            # Visual feedback to confirm the table is reacting
+            if apply_stress and current_stress != 0:
+                st.warning(f"📈 **Stress Applied:** Rates adjusted by +{current_stress*100:.2f}%")
+            else:
+                st.info("💡 Showing Base Case Amortization (No Stress Applied)")
+
+            b_term_val = int(bank_loan_term) if bank_loan_term else 0
+            s_term_val = int(seller_loan_term) if seller_loan_term else 0
+            max_term = max(b_term_val, s_term_val)
+        
+            if max_term > 0:
+                schedule_list = []
+                curr_b_bal = s_new_debt
+                curr_s_bal = s_seller_note
+        
+                # Tracking for cumulative totals
+                total_b_i = 0
+                total_s_i = 0
+        
+                for y in range(1, max_term + 1):
+                    # --- Bank Math ---
+                    if y <= b_term_val:
+                        b_p = s_new_debt / b_term_val
+                        # Uses the Live Stressed Rate defined at the top of this block
+                        b_i = curr_b_bal * active_b_rate 
+                        b_pay = b_p + b_i
+                        curr_b_bal = max(0, curr_b_bal - b_p)
+                    else:
+                        b_p = b_i = b_pay = curr_b_bal = 0.0
                 
-                amort.append({
-                    "Year": f"Y{y}", 
-                    "Principal": ann_pri, 
-                    "Interest": i_pmt, 
-                    "Total Payment": t_pmt, 
-                    "Remaining Balance": max(0, rem_bal),
-                    "DSCR": dscr_y
-                })
+                    # --- Seller Math ---
+                    if y <= s_term_val:
+                        s_p = s_seller_note / s_term_val
+                        # Uses the Live Stressed Rate defined at the top of this block
+                        s_i = curr_s_bal * active_s_rate
+                        s_pay = s_p + s_i
+                        curr_s_bal = max(0, curr_s_bal - s_p)
+                    else:
+                        s_p = s_i = s_pay = curr_s_bal = 0.0
+
+                    total_b_i += b_i
+                    total_s_i += s_i
+
+                    schedule_list.append({
+                        "Year": f"Year {y}",
+                        "Bank Principal": b_p,
+                        "Bank Interest": b_i,
+                        "Bank Payment": b_pay,
+                        "Bank Balance": curr_b_bal,
+                        "Seller Principal": s_p,
+                        "Seller Interest": s_i,
+                        "Seller Payment": s_pay,
+                        "Seller Balance": curr_s_bal,
+                        "Combined Total": (b_pay + s_pay)
+                    })
+
+                # Add the Cumulative Totals row
+                summary_row = {
+                    "Year": "CUMULATIVE TOTALS",
+                    "Bank Principal": s_new_debt,
+                    "Bank Interest": total_b_i,
+                    "Bank Payment": s_new_debt + total_b_i,
+                    "Bank Balance": 0,
+                    "Seller Principal": s_seller_note,
+                    "Seller Interest": total_s_i,
+                    "Seller Payment": s_seller_note + total_s_i,
+                    "Seller Balance": 0,
+                    "Combined Total": (s_new_debt + total_b_i + s_seller_note + total_s_i)
+                }
             
-            df_amort = pd.DataFrame(amort)
+                df_full_amort = pd.concat([pd.DataFrame(schedule_list), pd.DataFrame([summary_row])], ignore_index=True)
 
-            # --- 2. DISPLAY TABLE FIRST (WITHOUT INDEX) ---
-            # Using set_index("Year") removes the default numeric index column
-            st.dataframe(
-                df_amort.set_index("Year").style.format({
-                    "Principal": "${:,.0f}", 
-                    "Interest": "${:,.0f}", 
-                    "Total Payment": "${:,.0f}", 
-                    "Remaining Balance": "${:,.0f}",
-                    "DSCR": "{:.2f}x"
-                }), 
-                use_container_width=True
-            )
+                # 2. CSS for Bold Headers & Colors
+                st.markdown("""
+                    <style>
+                        .stDataFrame th {
+                            font-size: 15px !important;
+                            font-weight: 800 !important;
+                            color: black !important;
+                            text-align: center !important;
+                        }
+                        .stDataFrame th:nth-child(2), .stDataFrame th:nth-child(3), 
+                        .stDataFrame th:nth-child(4), .stDataFrame th:nth-child(5) { background-color: #b3e5fc !important; }
+                        .stDataFrame th:nth-child(6), .stDataFrame th:nth-child(7), 
+                        .stDataFrame th:nth-child(8), .stDataFrame th:nth-child(9) { background-color: #ffe0b2 !important; }
+                        .stDataFrame th:nth-child(10) { background-color: #c8e6c9 !important; }
+                    </style>
+                """, unsafe_allow_html=True)
 
-            # --- 3. DOWNLOAD EXCEL ---
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                # We export the version with "Year" as a column for better Excel utility
-                df_amort.to_excel(writer, index=False, sheet_name='Amortization_Schedule')
-            st.download_button(
-                label="📥 Download Amortization Schedule (Excel)",
-                data=output.getvalue(),
-                file_name=f"Amortization_{target_name}.xlsx",
-                key=f"dl_amort_{rc}"
-            )
+                # 3. Data Styling
+                styled_df = df_full_amort.style.format("${:,.0f}", subset=df_full_amort.columns[1:]) \
+                    .set_properties(subset=["Bank Principal", "Bank Interest", "Bank Payment", "Bank Balance"], 
+                                   **{'background-color': '#e1f5fe', 'color': 'black'}) \
+                    .set_properties(subset=["Seller Principal", "Seller Interest", "Seller Payment", "Seller Balance"], 
+                                   **{'background-color': '#fff3e0', 'color': 'black'}) \
+                    .set_properties(subset=["Combined Total"], 
+                                   **{'font-weight': 'bold', 'background-color': '#f1f8e9'}) \
+                    .apply(lambda x: ['font-weight: bold; background-color: #eeeeee' if x.Year == 'CUMULATIVE TOTALS' else '' for _ in x], axis=1)
 
-            st.divider()
+                st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
-            # --- 4. DSCR TREND CHART ---
-            st.subheader("Debt Service Coverage Ratio (DSCR) Trend")
-            fig_dscr = px.line(
-                df_amort, 
-                x="Year", 
-                y="DSCR", 
-                title="Projected DSCR Over Loan Term", 
-                markers=True,
-                line_shape="linear"
-            )
-            # Add Hurdle Line
-            h_val = target_min_dscr_hurdle if target_min_dscr_hurdle else 1.2
-            fig_dscr.add_hline(
-                y=h_val, 
-                line_dash="dash", 
-                line_color="red", 
-                annotation_text=f"Min Hurdle ({h_val}x)",
-                annotation_position="bottom right"
-            )
-            fig_dscr.update_layout(yaxis_title="Coverage Ratio (x)", template="plotly_white")
-            st.plotly_chart(fig_dscr, use_container_width=True)
+                # --- 4. EXCEL EXPORT ---
+                import io
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    df_full_amort.to_excel(writer, sheet_name='Amortization_Schedule', index=False)
+                    workbook = writer.book
+                    worksheet = writer.sheets['Amortization_Schedule']
+                
+                    b_head = workbook.add_format({'bold': True, 'bg_color': '#b3e5fc', 'border': 1, 'align': 'center'})
+                    s_head = workbook.add_format({'bold': True, 'bg_color': '#ffe0b2', 'border': 1, 'align': 'center'})
+                    t_head = workbook.add_format({'bold': True, 'bg_color': '#c8e6c9', 'border': 1, 'align': 'center'})
+                    sum_fmt = workbook.add_format({'bold': True, 'bg_color': '#eeeeee', 'num_format': '$#,##0', 'border': 1})
+                    num_fmt = workbook.add_format({'num_format': '$#,##0'})
+
+                    worksheet.write(0, 0, "Year")
+                    for col in range(1, 5): worksheet.write(0, col, df_full_amort.columns[col], b_head)
+                    for col in range(5, 9): worksheet.write(0, col, df_full_amort.columns[col], s_head)
+                    worksheet.write(0, 9, "Combined Total", t_head)
+                
+                    last_row = len(df_full_amort)
+                    worksheet.set_row(last_row, 20, sum_fmt)
+                    worksheet.set_column('A:A', 18)
+                    worksheet.set_column('B:J', 16, num_fmt)
+
+                st.download_button(
+                    label="📗 Download Detailed Excel Schedule with Totals",
+                    data=buffer.getvalue(), 
+                    file_name=f"{target_name}_Detailed_Amortization.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            else:
+                st.info("Please enter financing terms to see the schedule.")
 
         with tabs[2]:
             st.subheader("ROI Risk Analysis")
-            # Build sensitivity matrix for Multiple vs Interest Rate
-            m_rng = [ebitda_mult * (1 + x) for x in [-0.2, -0.1, 0, 0.1, 0.2]]
-            r_rng = [calc_int * (1 + x) for x in [-0.2, -0.1, 0, 0.1, 0.2]]
+            
+            # --- 1. SET CENTER POINTS ---
+            # Use the 'stressed' rate so the middle of the heatmap matches your current dashboard state
+            center_rate = stressed_b_rate 
+            center_mult = ebitda_mult
+            
+            # Build sensitivity ranges (+/- 20% from current center)
+            m_rng = [center_mult * (1 + x) for x in [-0.2, -0.1, 0, 0.1, 0.2]]
+            r_rng = [center_rate * (1 + x) for x in [-0.2, -0.1, 0, 0.1, 0.2]]
+            
             sens_data = []
             for m in m_rng:
                 row = []
                 for r in r_rng:
-                    tmp_p = s_t_ebitda * m
-                    tmp_d = tmp_p * debt_pct
-                    tmp_fcf = (consolidated_ebitda * fcf_conv) - ((tmp_d/loan_term) + (tmp_d * r))
-                    tmp_eq = (tmp_p + s_fees) - (tmp_d + (tmp_p * seller_pct))
+                    # Logic: If we paid 'm' multiple at 'r' interest rate...
+                    tmp_p = s_t_ebitda * m # Purchase Price
+                    tmp_d = tmp_p * debt_pct # Bank Debt
+                    tmp_s = tmp_p * seller_pct # Seller Note
+                    
+                    # Calculate Debt Service (Stressed)
+                    bank_ds = (tmp_d / (bank_loan_term if bank_loan_term > 0 else 1)) + (tmp_d * r)
+                    seller_ds = (tmp_s / (seller_loan_term if seller_loan_term > 0 else 1)) + (tmp_s * stressed_s_rate)
+                    
+                    # Cash Flow (using the Stressed EBITDA from Step 1 of the engine)
+                    tmp_fcf = (consolidated_ebitda * fcf_conv) - (bank_ds + seller_ds)
+                    
+                    # Cash Equity Required
+                    tmp_eq = (tmp_p + s_fees) - (tmp_d + tmp_s)
+                    
                     row.append((tmp_fcf / tmp_eq * 100) if tmp_eq > 0 else 0)
                 sens_data.append(row)
+
             df_sens = pd.DataFrame(sens_data, index=[f"{m:.1f}x" for m in m_rng], columns=[f"{r*100:.1f}%" for r in r_rng])
-            st.write("Heatmap: Year 1 Cash ROI %")
-            st.dataframe(df_sens.style.background_gradient(cmap='RdYlGn'))
- 
+            st.write("### Heatmap: Year 1 Cash ROI %")
+            st.info("Center value reflects current Purchase Multiple and Stressed Interest Rate.")
+            st.dataframe(df_sens.style.background_gradient(cmap='RdYlGn').format("{:.1f}%"), use_container_width=True)
+
             st.divider()
-            st.info("💡 **Lending Risk Heatmap:** Visualizes how aggressive pricing combined with high debt ratios might breach bank leverage covenants.")
+            
+            # --- 2. LENDING RISK HEATMAP ---
             lev_data = []
             for m in m_rng:
                 row = []
                 for r in r_rng:
                     tmp_p = s_t_ebitda * m
                     tmp_d = tmp_p * debt_pct
-                    tmp_lev = (tmp_d + (tmp_p * seller_pct)) / (consolidated_ebitda if consolidated_ebitda > 0 else 1)
+                    tmp_s = tmp_p * seller_pct
+                    # Total Leverage Ratio
+                    tmp_lev = (tmp_d + tmp_s) / (consolidated_ebitda if consolidated_ebitda > 0 else 1)
                     row.append(tmp_lev)
                 lev_data.append(row)
 
             df_lev = pd.DataFrame(lev_data, index=[f"{m:.1f}x" for m in m_rng], columns=[f"{r*100:.1f}%" for r in r_rng])
-            st.write("**Matrix B: Pro-Forma Leverage (Debt/EBITDA)**")
-            st.dataframe(df_lev.style.background_gradient(cmap='Reds_r').format("{:.2f}x"))
+            st.write("### Matrix B: Pro-Forma Leverage (Total Debt/EBITDA)")
+            st.dataframe(df_lev.style.background_gradient(cmap='Reds_r').format("{:.2f}x"), use_container_width=True)
 
         with tabs[3]:
-            st.subheader("Debt Capacity & Margin of Safety")
-            max_debt = (consolidated_ebitda * target_max_lev_hurdle) - 1500000
-            cap_used = s_new_debt + s_seller_note
-            st.write(f"Total Pro-Forma Debt Capacity: **${max_debt:,.0f}**")
-            st.write(f"Capacity Utilized: **${cap_used:,.0f}**")
-            
-            fig_cap = go.Figure(go.Indicator(
-                mode = "gauge+number+delta", value = cap_used,
-                delta = {'reference': max_debt, 'increasing': {'color': "red"}},
-                gauge = {'axis': {'range': [None, max_debt * 1.5]}, 'bar': {'color': "#1f497d"},
-                         'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': max_debt}}
-            ))
-            st.plotly_chart(fig_cap, use_container_width=True)
-
-        with tabs[4]:
             st.subheader("Simulation Record Vault Management")
             
             # --- Initialize a Deletion Reset Counter in Session State if not present ---
@@ -1399,9 +1666,10 @@ def show_acquisition():
 
                         # Reconstruct Amortization for the PDF Appendix
                         pdf_amort_hist = []
+                        max_term_hist = int(max(bank_loan_term or 0, seller_loan_term or 0))
                         r_bal_h = s_new_debt
-                        a_pri_h = s_new_debt / loan_term if loan_term > 0 else 0
-                        for y in range(1, loan_term + 1):
+                        a_pri_h = s_new_debt / bank_loan_term if bank_loan_term and bank_loan_term > 0 else 0
+                        for y in range(1, max_term_hist + 1):
                             i_p_h = r_bal_h * int_rate_val # Use the base interest rate
                             t_p_h = a_pri_h + i_p_h
                             r_bal_h -= a_pri_h
@@ -1497,7 +1765,7 @@ def show_acquisition():
                 base_growth = (mv_ebitda_base + base_adj_ebitda) * organic_growth
                 base_cons_ebitda = (mv_ebitda_base + base_adj_ebitda) + base_synergy + base_growth
                 
-                base_ann_debt_svc = (s_new_debt / loan_term) + (s_new_debt * int_rate_val)
+                base_ann_debt_svc = (s_new_debt / (bank_loan_term if bank_loan_term and bank_loan_term > 0 else 1)) + (s_new_debt * int_rate_val)
                 base_fcf = (base_cons_ebitda * fcf_conv) - base_ann_debt_svc
                 base_roi = (base_fcf / (cash_equity_needed if cash_equity_needed > 0 else 1)) * 100
                 base_lev = (s_new_debt + s_seller_note + 1500000) / (base_cons_ebitda if base_cons_ebitda > 0 else 1)
@@ -1524,7 +1792,7 @@ def show_acquisition():
             # --- PHASE 1: PDF NOT YET GENERATED ---
             if not st.session_state.pdf_exported:
                 if st.button("📄 Export Summary PDF", use_container_width=True, key=f"export_trigger_{rc}"):
-                    # 1. Prepare Financing Structure
+                    # 1. Prepare Financing Structure (Sources & Uses)
                     s_and_u = {
                         "sources": [
                             ("Bank Debt", f"${s_new_debt:,.0f}"),
@@ -1539,44 +1807,76 @@ def show_acquisition():
                         ]
                     }
 
-                    # 2. Re-calculate Amortization for PDF
-                    pdf_amort = []
-                    r_bal = s_new_debt
-                    a_pri = s_new_debt / loan_term if loan_term > 0 else 0
-                    for y in range(1, loan_term + 1):
-                        i_p = r_bal * calc_int
-                        t_p = a_pri + i_p
-                        r_bal -= a_pri
-                        pdf_amort.append({
-                            "Year": f"Y{y}", "Principal": a_pri, "Interest": i_p, 
-                            "Total Payment": t_p, "Remaining Balance": max(0, r_bal)
+                    # 2. Prepare Amortization Schedule (FORCING BASE CASE DATA)
+                    pdf_amort_combined = []
+                    m_term = int(max(bank_loan_term or 0, seller_loan_term or 0))
+                    
+                    # Reset balances for the internal PDF loop
+                    b_bal_pdf = s_new_debt
+                    s_bal_pdf = s_seller_note
+
+                    for y in range(1, m_term + 1):
+                        # Bank Logic (Using base_b_rate)
+                        if y <= (bank_loan_term or 0):
+                            b_p = s_new_debt / bank_loan_term
+                            b_i = b_bal_pdf * base_b_rate  # <--- USES BASE RATE
+                            b_pay = b_p + b_i
+                            b_bal_pdf = max(0, b_bal_pdf - b_p)
+                        else:
+                            b_p = b_i = b_pay = b_bal_pdf = 0.0
+
+                        # Seller Logic (Using base_s_rate)
+                        if y <= (seller_loan_term or 0):
+                            s_p = s_seller_note / seller_loan_term
+                            s_i = s_bal_pdf * base_s_rate  # <--- USES BASE RATE
+                            s_pay = s_p + s_i
+                            s_bal_pdf = max(0, s_bal_pdf - s_p)
+                        else:
+                            s_p = s_i = s_pay = s_bal_pdf = 0.0
+
+                        pdf_amort_combined.append({
+                            "Year": f"Year {y}",
+                            "Bank Principal": b_p,
+                            "Bank Interest": b_i,
+                            "Bank Payment": b_pay,
+                            "Bank Balance": b_bal_pdf,
+                            "Seller Principal": s_p,
+                            "Seller Interest": s_i,
+                            "Seller Payment": s_pay,
+                            "Seller Balance": s_bal_pdf,
+                            "Combined Total": (b_pay + s_pay)
                         })
 
                     # 3. Build PDF
                     pdf_b = create_pdf(
-                        rec={"Target": target_name, "Verdict": verdict, "Reasons": strat_notes, "State": target_state, "City": target_city},
+                        rec={
+                            "Target": target_name, 
+                            "Verdict": verdict, 
+                            "Reasons": strat_notes, 
+                            "State": target_state, 
+                            "City": target_city
+                        },
                         kpi_data={
                             "Purchase Price": f"${purchase_price:,.0f}",
                             "Purchase Multiple": f"{ebitda_mult:.1f}x",
                             "Closing Leverage": f"{total_lev:.2f}x",
                             "Year 1 Cash ROI": f"{cash_roi:.1f}%",
-                            "DSCR (Avg)": f"{deal_dscr:.2f}x"
+                            "DSCR (Avg)": f"{deal_dscr:.2f}x",
+                            "dscr": deal_dscr # Uses the base DSCR calculated in engine
                         },
                         sources_uses=s_and_u,
-                        amort_schedule=pdf_amort
+                        amort_schedule=pdf_amort_combined
                     )
-                    
-                    # 4. Save to state and trigger refresh
+
+                    # 4. Save to session state and trigger refresh
                     st.session_state.pdf_exported = True
                     st.session_state.temp_pdf = pdf_b 
                     st.rerun()
-            
+
             # --- PHASE 2: PDF GENERATED -> SHOW GREYED OUT + DOWNLOAD ---
             else:
-                # This button is just a visual label to show it is deactivated
                 st.button("✅ PDF Generated", use_container_width=True, disabled=True, key=f"exported_grey_{rc}")
                 
-                # This is the actual functional button
                 st.download_button(
                     label="⬇️ Click to Download Report",
                     data=st.session_state.temp_pdf,
@@ -1585,7 +1885,6 @@ def show_acquisition():
                     use_container_width=True,
                     key=f"dl_final_{rc}"
                 )
-                
 
         with b3:
             if st.button("🔄 Clear & Restart Simulation", use_container_width=True, key=f"restart_btn_{rc}"):
