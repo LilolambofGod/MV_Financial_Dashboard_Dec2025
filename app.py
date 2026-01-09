@@ -1502,7 +1502,6 @@ def show_acquisition():
     else:
         df_hist_master = pd.DataFrame(columns=db_cols)
 
-    st.title("🤝 Strategic Acquisition Simulation")
 
     # --- FIXING THE CRASH (Math Safety) ---
     # When you reach the loan calculation later in the function, ensure this logic is used:
@@ -1554,7 +1553,8 @@ def show_acquisition():
         s_t_ebitda = t_ebitda if t_ebitda else 0
         purchase_price = s_t_ebitda * ebitda_mult
         st.metric("Implied Purchase Price", f"${purchase_price:,.0f}")
-
+    
+    # --- STEP 3: FINANCING SECTION ---
     st.markdown("<div class='section-header-blue'>Step 3: Financing</div>", unsafe_allow_html=True)
 
     # 1. Input Layout: Percentage Allocation and Terms
@@ -1576,51 +1576,64 @@ def show_acquisition():
         seller_int_input = st.number_input("Seller Interest (%)", value=None, key=f"sell_int_{rc}")
         seller_loan_term = st.number_input("Seller Term (Years)", value=None, step=1, key=f"sell_term_{rc}")
     
+    # --- 2. CALCULATED AMOUNTS BREAKDOWN ---
+    # We perform the math here to show the dollar amounts based on your sliders
+    p_price = purchase_price if purchase_price is not None else 0.0
+    s_fees = transaction_fees if transaction_fees is not None else 0
     
-    # --- ADD ZERO-GUARDING HERE ---
-    b_term = bank_loan_term if (bank_loan_term and bank_loan_term > 0) else 1
-    s_term = seller_loan_term if (seller_loan_term and seller_loan_term > 0) else 1
+    s_new_debt = p_price * debt_pct
+    s_seller_note = p_price * seller_pct
+    total_financing = s_new_debt + s_seller_note
+    cash_equity_needed = (p_price + s_fees) - total_financing
 
-    # 2. Sanitized Math & Split Debt Service
-    b_rate = (bank_int_input / 100) if bank_int_input else 0.0
-    s_rate = (seller_int_input / 100) if seller_int_input else 0.0
-    s_fees = transaction_fees if transaction_fees else 0
+    st.write("") # Padding
+    st.markdown("#### 💵 Financing Breakdown (Calculated)")
+    amt_c1, amt_c2, amt_c3, amt_c4 = st.columns(4)
     
-    # ALIAS for legacy code: ensures 'int_rate_val' exists for your heatmaps
+    # These metrics show the exact amounts you were looking for
+    amt_c1.metric("Bank Financing", f"${s_new_debt:,.0f}")
+    amt_c2.metric("Seller Note", f"${s_seller_note:,.0f}")
+    amt_c3.metric("Cash Equity", f"${cash_equity_needed:,.0f}", delta="Required", delta_color="inverse")
+    amt_c4.metric("Total Deal Size", f"${(p_price + s_fees):,.0f}")
+
+    # --- 3. MATH FOR DEBT SERVICE (Hidden Engine) ---
+    b_term = int(bank_loan_term) if (bank_loan_term is not None and bank_loan_term > 0) else 5
+    s_term = int(seller_loan_term) if (seller_loan_term is not None and seller_loan_term > 0) else 5
+    b_rate = (float(bank_int_input) / 100) if bank_int_input is not None else 0.0
+    s_rate = (float(seller_int_input) / 100) if seller_int_input is not None else 0.0
+    
+    # Sanitized Math Variables
+    s_fees = transaction_fees if transaction_fees is not None else 0
     int_rate_val = b_rate 
     
-    s_new_debt = purchase_price * debt_pct
-    s_seller_note = purchase_price * seller_pct
+    # Ensure purchase_price and percentages are not None
+    p_price = purchase_price if purchase_price is not None else 0.0
+    d_pct = debt_pct if debt_pct is not None else 0.0
+    sel_pct = seller_pct if seller_pct is not None else 0.0
+
+    s_new_debt = p_price * d_pct
+    s_seller_note = p_price * sel_pct
     total_financing = s_new_debt + s_seller_note
-    cash_equity_needed = (purchase_price + s_fees) - total_financing
-    
-    # --- STEP 1: FINANCIAL PROJECTIONS (The "Numerator") ---
+    cash_equity_needed = (p_price + s_fees) - total_financing
+
+    # --- 3. PROJECTIONS & DEBT SERVICE ---
+    # Numerator
+    calc_ret = retention_rate if 'retention_rate' in locals() else 1.0
     adj_t_ebitda = s_t_ebitda * (calc_ret if apply_stress else 1.0)
     
     consolidated_ebitda = (mv_ebitda_base + adj_t_ebitda) + (adj_t_ebitda * synergy_pct)
     consolidated_ebitda += (consolidated_ebitda * organic_growth)
 
-    # --- STEP 2: DEBT RATE DEFINITIONS ---
+    # Debt Service Math
     base_b_rate = b_rate  
     base_s_rate = s_rate
 
-    # DYNAMICALLY DETECT THE STRESS VARIABLE
-    # This looks for 'interest_stress' or 'st_int_adj' or 'stress_rate_jump'
-    if 'interest_stress' in locals():
-        stress_rate_jump = interest_stress
-    elif 'st_int_adj' in locals():
-        stress_rate_jump = st_int_adj
-    else:
+    if 'stress_rate_jump' not in locals():
         stress_rate_jump = 0.0
 
-    # Apply stress
     stressed_b_rate = base_b_rate + (stress_rate_jump if apply_stress else 0)
     stressed_s_rate = base_s_rate + (stress_rate_jump if apply_stress else 0)
     
-    # ALIAS for legacy code: ensures 'calc_int' is updated for ROI heatmaps
-    calc_int = stressed_b_rate
-
-    # --- STEP 3: DEBT SERVICE MATH ---
     bank_annual_pri = s_new_debt / b_term
     seller_annual_pri = s_seller_note / s_term
     
@@ -1630,40 +1643,13 @@ def show_acquisition():
     stressed_debt_service = (bank_annual_pri + (s_new_debt * stressed_b_rate)) + \
                             (seller_annual_pri + (s_seller_note * stressed_s_rate))
 
-    # --- STEP 4: KPI MATH WITH DELTAS ---
-    # Base Case (Record Vault)
-    deal_dscr = (consolidated_ebitda * fcf_conv) / base_debt_service if base_debt_service > 0 else 0
-    base_roi = ((mv_ebitda_base + s_t_ebitda) * fcf_conv - base_debt_service) / cash_equity_needed * 100 if cash_equity_needed > 0 else 0
-    
-    # Live Case (Dashboard UI)
-    live_dscr = (consolidated_ebitda * fcf_conv) / stressed_debt_service if stressed_debt_service > 0 else 0
-    cash_roi = (consolidated_ebitda * fcf_conv - stressed_debt_service) / cash_equity_needed * 100 if cash_equity_needed > 0 else 0
-
-    # Delta Calculations
-    dscr_delta_val = live_dscr - deal_dscr
-    dscr_delta_pct = (dscr_delta_val / deal_dscr * 100) if deal_dscr > 0 else 0
-
-    ebitda_delta_val = consolidated_ebitda - (mv_ebitda_base + s_t_ebitda)
-    ebitda_delta_pct = (ebitda_delta_val / (mv_ebitda_base + s_t_ebitda) * 100) if (mv_ebitda_base + s_t_ebitda) > 0 else 0
-
-    roi_delta_val = cash_roi - base_roi
-    roi_delta_pct = (roi_delta_val / base_roi * 100) if base_roi > 0 else 0
-
-    # 3. Summary Metrics Row
-    st.divider()
-    m1, m2, m3, m4 = st.columns(4)
-    with m1: st.metric("Bank Loan Amt", f"${s_new_debt:,.0f}")
-    with m2: st.metric("Seller Note Amt", f"${s_seller_note:,.0f}")
-    with m3: st.metric("Total Financing", f"${total_financing:,.0f}")
-    with m4: st.metric("Cash Equity Needed", f"${cash_equity_needed:,.0f}", delta_color="inverse")
-
-    # 4. Updated Readiness Checklist
+    # --- 4. READINESS CHECKLIST ---
     checklist = {
         "Identity": full_sim_name != "",
         "Mandates": all(v is not None for v in [target_max_lev_hurdle, target_min_ebitda_hurdle, target_max_price_hurdle]),
         "Target": target_name != "" and target_state != "",
         "Financials": s_t_ebitda > 0 and ebitda_mult > 0,
-        "Financing Structure": (debt_pct > 0 or seller_pct > 0),
+        "Financing": (debt_pct > 0 or seller_pct > 0),
         "Bank Terms": bank_int_input is not None and bank_loan_term is not None,
         "Seller Terms": seller_int_input is not None and seller_loan_term is not None,
         "Closing Costs": transaction_fees is not None
